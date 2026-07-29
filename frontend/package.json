@@ -1,20 +1,22 @@
 {
-  "name": "fin-tastic-sales-coach-frontend",
-  "version": "1.0.0",
+  "name": "fin-tastic-render-frontend",
   "private": true,
+  "version": "2026.7.21-routing-repair",
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 5173",
-    "build": "vite build",
+    "build": "tsc --noEmit -p tsconfig.json && vite build",
     "preview": "vite preview --host 0.0.0.0 --port 4173"
   },
   "dependencies": {
-    "@vitejs/plugin-react": "latest",
-    "vite": "latest",
-    "typescript": "latest",
-    "react": "latest",
-    "react-dom": "latest",
-    "lucide-react": "latest"
+    "react": "19.2.7",
+    "react-dom": "19.2.7"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "5.2.0",
+    "typescript": "5.9.3",
+    "vite": "7.3.6"
+  }
 }

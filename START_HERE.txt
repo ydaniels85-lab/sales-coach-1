@@ -1,0 +1,35 @@
+FIN-TASTIC RENDER — SALES ROUTING REPAIR
+==========================================
+
+DEPLOY
+------
+1. Extract this folder.
+2. Replace all files in the current Fin-Tastic Git repository.
+3. Commit and push.
+4. In Render, keep:
+   DEFAULT_CREDIT_REPORT_PDF_PASSWORD=DN13084
+5. Choose:
+   Manual Deploy -> Clear build cache & deploy
+6. Open /api/health and confirm databaseReady is true.
+
+ROUTING RULES
+-------------
+- Exact credit score 0 -> Debt Review Removal.
+- Score 0 plus active balances -> also Debt Mediation.
+- Confirmed debt-review flag -> Debt Review Removal.
+- Debt-review flag plus balances -> also Debt Mediation.
+- No flag + score 100-600 + no balances -> Credit Profile Investigation.
+- Active financed asset -> Debt Review.
+- Other active balances -> Debt Mediation.
+- Low instalments alone do not trigger CPI.
+
+PARSER
+------
+- Reads labelled Final Score values.
+- Shows score source, confidence and matched text.
+- Supports manual score verification.
+- Protected PDFs use DN13084 through the server-side environment setting.
+
+IMPORTANT
+---------
+Logins remain disabled. Anyone with the Render URL can access stored clients.

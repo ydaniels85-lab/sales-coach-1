@@ -1,0 +1,42 @@
+FIN-TASTIC RENDER DEPLOYMENT — CREDIT SCORE PARSER REPAIR
+=========================================================
+
+1. Extract the ZIP.
+2. Replace the complete contents of the current private Git repository.
+3. Commit and push all changes.
+4. Open the existing Render web service.
+5. Confirm the environment variable:
+   DEFAULT_CREDIT_REPORT_PDF_PASSWORD=DN13084
+6. Choose:
+   Manual Deploy -> Clear build cache & deploy
+7. Open:
+   https://YOUR-RENDER-URL/api/health
+8. Confirm:
+   databaseReady: true
+   authenticationRequired: false
+   accessMode: open
+9. Upload one of the reports and confirm the Parser Quality section shows:
+   - the correct score
+   - Final Score table row as the source
+   - parser confidence
+   - the exact matched report text
+
+SCORE REPAIR
+------------
+- The parser prioritises labelled Final Score and Credit Score values.
+- It ignores score-band scales, dates, balances and account totals.
+- It supports risk category and score values split across PDF lines.
+- It avoids choosing a numeric exception code before the final score.
+- Client Capture allows a manual score correction.
+- Saving a correction recalculates the Sales Coach immediately.
+
+VERIFIED RESULTS
+----------------
+- REF2788037.pdf: score 553, confidence 99%, 5 accounts.
+- REF2788225.pdf: score 566, confidence 99%, 9 accounts.
+
+No database schema migration is required. New score metadata is stored in the existing JSON client payload.
+
+WARNING
+-------
+Authentication remains disabled. Anyone with the service URL can access stored client records.

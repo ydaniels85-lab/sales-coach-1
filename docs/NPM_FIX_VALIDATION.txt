@@ -1,0 +1,28 @@
+Fin-Tastic Render npm fix validation
+Date: 2026-07-17
+
+Validated:
+- Removed all 120 internal Artifactory URLs from package-lock.json.
+- package.json and package-lock.json are synchronized.
+- npm ci --include=dev --no-audit --no-fund completed successfully.
+- 71 frontend packages installed.
+- TypeScript validation completed successfully.
+- Vite 7.3.6 production build completed successfully.
+- Python backend source compilation completed successfully.
+
+Frontend test environment:
+- Node v22.16.0
+- npm 10.9.2
+
+Dockerfile deployment environment:
+- node:20-bookworm-slim frontend stage
+- python:3.12-slim runtime stage
+
+The full Docker image was not executed in this workspace because Docker is unavailable.
+
+Additional validation for this revision:
+- Dockerfile no longer references frontend/.npmrc in any COPY instruction.
+- Registry and retry configuration remains present in Docker ENV values.
+- npm ci and npm run build completed after removing frontend/.npmrc from the test working tree.
+- frontend/.npmrc is not included in this release.
+- API smoke test passed with encrypted-PDF password required, wrong-password rejection, DN13084 success, client storage and duplicate prevention.

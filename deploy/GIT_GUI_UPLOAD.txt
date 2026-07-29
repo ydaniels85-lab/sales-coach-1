@@ -1,0 +1,11 @@
+UPLOAD WITH GIT GUI
+
+1. Create a new private repository on GitHub.
+2. Open Git GUI and choose Create New Repository.
+3. Select the extracted fin-tastic-render-deployment folder.
+4. Stage all files, write a commit message, and commit.
+5. Add the GitHub repository as the origin remote.
+6. Push the main branch.
+7. In Render, create a Blueprint from that private repository.
+
+Do not commit the generated render-secrets folder or any .env file.

@@ -1,376 +1,945 @@
-import { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, CheckCircle2, ClipboardList, FileUp, Handshake, RefreshCcw, Send, ShieldCheck, Sparkles, WalletCards } from 'lucide-react';
-import { createManualLead, fetchHandoffs, fetchLeads, health, leadAction, uploadCreditReport } from './lib/api';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
-type Lead = any;
-type Handoff = any;
+type BankDetails = {
+  accountHolder: string;
+  bankName: string;
+  accountType: string;
+  branchCode: string;
+  accountNumber: string;
+  debitOrderDay: string;
+};
 
-const tabs = [
-  { id: 'upload', label: 'Upload', icon: FileUp },
-  { id: 'coach', label: 'Sales Coach', icon: Sparkles },
-  { id: 'closing', label: 'Closing Desk', icon: Handshake },
-  { id: 'admin', label: 'Admin Handoff', icon: ClipboardList },
-];
+type PersonDetails = {
+  firstName: string;
+  secondName: string;
+  surname: string;
+  fullName: string;
+  idNumber: string;
+  dateOfBirth: string;
+  gender: string;
+  maritalStatus: string;
+  phone: string;
+  alternativePhone: string;
+  whatsapp: string;
+  email: string;
+  physicalAddress: string;
+  suburb: string;
+  city: string;
+  province: string;
+  postalCode: string;
+  employer: string;
+  occupation: string;
+  dateEmployed: string;
+  salaryFrequency: string;
+  grossSalary: number;
+  nettSalary: number;
+  monthlyLivingExpenses: number;
+  bank: BankDetails;
+};
 
-function money(value: any) {
-  const amount = Number(value || 0);
-  return amount.toLocaleString('en-ZA', { style: 'currency', currency: 'ZAR' });
-}
+type DebtAccount = {
+  id: string;
+  creditorName: string;
+  accountNumber: string;
+  accountType: string;
+  openingBalance: number;
+  currentBalance: number;
+  arrears: number;
+  monthlyInstallment: number;
+  reducedAmount: number;
+  lastPaidDate: string;
+  monthsInArrears: number;
+  openDate: string;
+  status: string;
+  included: boolean;
+  isFurniture: boolean;
+  isAsset: boolean;
+  parserSource: string;
+};
 
-function badgeClass(value: string) {
-  const low = (value || '').toLowerCase();
-  if (low.includes('hot')) return 'badge hot';
-  if (low.includes('warm')) return 'badge warm';
-  if (low.includes('risk')) return 'badge risk';
-  return 'badge';
-}
+type PaymentPlan = {
+  months: number;
+  label: string;
+  monthlyAmount: number;
+};
 
-export default function App() {
-  const [activeTab, setActiveTab] = useState('upload');
-  const [leads, setLeads] = useState<Lead[]>([]);
-  const [handoffs, setHandoffs] = useState<Handoff[]>([]);
-  const [selectedLeadId, setSelectedLeadId] = useState<string>('');
-  const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState('');
-  const [error, setError] = useState('');
-  const [apiStatus, setApiStatus] = useState('checking');
+type GoldenQuestion = {
+  question: string;
+  whyItMatters: string;
+};
 
-  const selectedLead = useMemo(() => leads.find((lead) => lead.id === selectedLeadId) || leads[0], [leads, selectedLeadId]);
+type ObjectionHandler = {
+  objection: string;
+  response: string;
+};
 
-  async function reload() {
-    setError('');
-    try {
-      const [leadData, handoffData] = await Promise.all([fetchLeads(), fetchHandoffs()]);
-      setLeads(leadData.leads || []);
-      setHandoffs(handoffData.handoffs || []);
-      if (!selectedLeadId && leadData.leads?.[0]?.id) setSelectedLeadId(leadData.leads[0].id);
-    } catch (err: any) {
-      setError(err.message || 'Could not load data. Make sure backend is running on port 5000.');
-    }
+type ScoreCandidate = {
+  score: number;
+  confidence: number;
+  source: string;
+  context: string;
+};
+
+type Coach = {
+  service: string;
+  additionalServices: string[];
+  urgency: string;
+  headline: string;
+  reasons: string[];
+  openingScript: string;
+  goldenQuestions: GoldenQuestion[];
+  qualifyingQuestions: string[];
+  nextSteps: string[];
+  objectionHandlers: ObjectionHandler[];
+  pricing: null | {
+    currency: string;
+    onceOff: number;
+    description: string;
+    paymentPlans: PaymentPlan[];
+  };
+  totals: {
+    outstanding: number;
+    arrears: number;
+    originalInstalment: number;
+    reducedInstalment: number;
+    estimatedRelief: number;
+  };
+  flags: {
+    debtReviewListed: boolean;
+    hasAsset: boolean;
+    hasFurniture: boolean;
+    scoreZeroRule: boolean;
+    scoreInCpiRange: boolean;
+    hasOutstandingBalances: boolean;
+    doubleSaleCandidate: boolean;
+    creditProfileInvestigationCandidate: boolean;
+  };
+};
+
+type Client = PersonDetails & {
+  id: string;
+  applicationType: 'Single' | 'Joint';
+  spouse: PersonDetails;
+  creditScore: number | null;
+  scoreFound: boolean;
+  riskCategory: string;
+  scoreConfidence: number;
+  scoreSource: string;
+  scoreRawContext: string;
+  scoreCandidates: ScoreCandidate[];
+  scoreNeedsReview: boolean;
+  scoreManuallyVerified: boolean;
+  debtReviewListed: boolean;
+  debtReviewDetail: string;
+  serviceType: string;
+  status: string;
+  detailsCompletion: number;
+  detailsComplete: boolean;
+  accounts: DebtAccount[];
+  coach: Coach;
+  report: {
+    bureau: string;
+    filename: string;
+    reportReference: string;
+    clientReference: string;
+    searchDate: string;
+    summary: Record<string, number>;
+  };
+};
+
+type ParseResponse = {
+  success: boolean;
+  clientId: string;
+  client: Client;
+  warnings: string[];
+  confidence: number;
+  pdf: { encrypted: boolean; usedDefaultPassword: boolean; usedOcr: boolean; pageCount: number };
+};
+
+type View = 'dashboard' | 'upload' | 'capture' | 'clients';
+
+const EMPTY_BANK: BankDetails = {
+  accountHolder: '',
+  bankName: '',
+  accountType: '',
+  branchCode: '',
+  accountNumber: '',
+  debitOrderDay: ''
+};
+
+const EMPTY_PERSON: PersonDetails = {
+  firstName: '',
+  secondName: '',
+  surname: '',
+  fullName: '',
+  idNumber: '',
+  dateOfBirth: '',
+  gender: '',
+  maritalStatus: '',
+  phone: '',
+  alternativePhone: '',
+  whatsapp: '',
+  email: '',
+  physicalAddress: '',
+  suburb: '',
+  city: '',
+  province: '',
+  postalCode: '',
+  employer: '',
+  occupation: '',
+  dateEmployed: '',
+  salaryFrequency: 'Monthly',
+  grossSalary: 0,
+  nettSalary: 0,
+  monthlyLivingExpenses: 0,
+  bank: { ...EMPTY_BANK }
+};
+
+const EMPTY_COACH: Coach = {
+  service: 'Needs Manual Review',
+  additionalServices: [],
+  urgency: 'Low',
+  headline: 'Manual review required',
+  reasons: ['Upload a credit report to activate the Sales Opportunity Engine.'],
+  openingScript: 'Capture the client objective and supporting information before selecting a service.',
+  goldenQuestions: [
+    { question: 'Are you 18 years or older and a South African citizen?', whyItMatters: 'Confirms basic identity and service eligibility.' },
+    { question: "Do you bank with one of South Africa's major banks?", whyItMatters: 'Helps confirm mandate and debit-order compatibility.' },
+    { question: 'Is your cellphone number linked to your bank account?', whyItMatters: 'Important for bank-linked verification and DebiCheck.' },
+    { question: 'Is a Debt Counsellor or creditor currently debiting your bank account?', whyItMatters: 'Identifies current collections and debit-date conflicts.' },
+    { question: 'Are you employed or receiving a regular income into your bank account?', whyItMatters: 'Confirms affordability and payment sustainability.' }
+  ],
+  qualifyingQuestions: ['What result is the client trying to achieve?'],
+  nextSteps: ['Capture the client details and upload the credit report.'],
+  objectionHandlers: [{ objection: 'Can you guarantee the result?', response: 'Do not promise an outcome before the report and documents are verified.' }],
+  pricing: null,
+  totals: { outstanding: 0, arrears: 0, originalInstalment: 0, reducedInstalment: 0, estimatedRelief: 0 },
+  flags: {
+    debtReviewListed: false,
+    hasAsset: false,
+    hasFurniture: false,
+    scoreZeroRule: false,
+    scoreInCpiRange: false,
+    hasOutstandingBalances: false,
+    doubleSaleCandidate: false,
+    creditProfileInvestigationCandidate: false
   }
+};
+
+const money = (value: number | undefined) => new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR' }).format(value || 0);
+
+function normalizePerson(value?: Partial<PersonDetails>): PersonDetails {
+  return {
+    ...EMPTY_PERSON,
+    ...(value || {}),
+    grossSalary: Number(value?.grossSalary || 0),
+    nettSalary: Number(value?.nettSalary || 0),
+    monthlyLivingExpenses: Number(value?.monthlyLivingExpenses || 0),
+    bank: { ...EMPTY_BANK, ...(value?.bank || {}) }
+  };
+}
+
+function normalizeClient(value: Partial<Client>): Client {
+  const primary = normalizePerson(value);
+  return {
+    ...primary,
+    id: value.id || '',
+    applicationType: value.applicationType === 'Joint' ? 'Joint' : 'Single',
+    spouse: normalizePerson(value.spouse),
+    creditScore: value.creditScore ?? null,
+    scoreFound: Boolean(value.scoreFound),
+    riskCategory: value.riskCategory || '',
+    scoreConfidence: Number(value.scoreConfidence || 0),
+    scoreSource: value.scoreSource || '',
+    scoreRawContext: value.scoreRawContext || '',
+    scoreCandidates: Array.isArray(value.scoreCandidates) ? value.scoreCandidates : [],
+    scoreNeedsReview: Boolean(value.scoreNeedsReview),
+    scoreManuallyVerified: Boolean(value.scoreManuallyVerified),
+    debtReviewListed: Boolean(value.debtReviewListed),
+    debtReviewDetail: value.debtReviewDetail || '',
+    serviceType: value.serviceType || value.coach?.service || 'Needs Manual Review',
+    status: value.status || 'Client Details Captured',
+    detailsCompletion: Number(value.detailsCompletion || 0),
+    detailsComplete: Boolean(value.detailsComplete),
+    accounts: Array.isArray(value.accounts) ? value.accounts : [],
+    coach: {
+      ...EMPTY_COACH,
+      ...(value.coach || {}),
+      reasons: value.coach?.reasons || EMPTY_COACH.reasons,
+      openingScript: value.coach?.openingScript || EMPTY_COACH.openingScript,
+      goldenQuestions: Array.isArray(value.coach?.goldenQuestions) && value.coach!.goldenQuestions.length
+        ? value.coach!.goldenQuestions
+        : EMPTY_COACH.goldenQuestions,
+      qualifyingQuestions: value.coach?.qualifyingQuestions || EMPTY_COACH.qualifyingQuestions,
+      nextSteps: value.coach?.nextSteps || EMPTY_COACH.nextSteps,
+      objectionHandlers: Array.isArray(value.coach?.objectionHandlers)
+        ? value.coach!.objectionHandlers.map((item) => typeof item === 'string'
+          ? { objection: 'Consultant reminder', response: item }
+          : item)
+        : EMPTY_COACH.objectionHandlers,
+      totals: { ...EMPTY_COACH.totals, ...(value.coach?.totals || {}) },
+      flags: { ...EMPTY_COACH.flags, ...(value.coach?.flags || {}) },
+      pricing: value.coach?.pricing || null
+    },
+    report: {
+      bureau: value.report?.bureau || '',
+      filename: value.report?.filename || '',
+      reportReference: value.report?.reportReference || '',
+      clientReference: value.report?.clientReference || '',
+      searchDate: value.report?.searchDate || '',
+      summary: value.report?.summary || {}
+    }
+  };
+}
+
+function calculateCompletion(client: Client): number {
+  const primary = [
+    client.firstName, client.surname, client.idNumber, client.phone, client.email,
+    client.physicalAddress, client.employer, client.nettSalary,
+    client.bank.accountHolder, client.bank.bankName, client.bank.accountType, client.bank.accountNumber
+  ];
+  const values: Array<string | number> = [...primary];
+  if (client.applicationType === 'Joint') {
+    values.push(
+      client.spouse.firstName, client.spouse.surname, client.spouse.idNumber,
+      client.spouse.phone, client.spouse.email, client.spouse.employer,
+      client.spouse.nettSalary, client.spouse.bank.accountHolder,
+      client.spouse.bank.bankName, client.spouse.bank.accountNumber
+    );
+  }
+  const completed = values.filter((value) => value !== '' && value !== 0).length;
+  return values.length ? Math.round((completed / values.length) * 100) : 0;
+}
+
+async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const response = await fetch(path, {
+    ...init,
+    headers: {
+      ...(init.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
+      ...(init.headers || {})
+    }
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(body.error || `Request failed (${response.status})`) as Error & { payload?: unknown; status?: number };
+    error.payload = body;
+    error.status = response.status;
+    throw error;
+  }
+  return body as T;
+}
+
+function Field(props: {
+  label: string;
+  value: string | number;
+  onChange: (value: string) => void;
+  type?: string;
+  placeholder?: string;
+  inputMode?: 'text' | 'numeric' | 'decimal' | 'tel' | 'email' | 'search' | 'url' | 'none';
+}) {
+  return (
+    <label>
+      {props.label}
+      <input
+        type={props.type || 'text'}
+        value={props.value}
+        placeholder={props.placeholder}
+        inputMode={props.inputMode}
+        onChange={(event) => props.onChange(event.target.value)}
+      />
+    </label>
+  );
+}
+
+function SelectField(props: { label: string; value: string; options: string[]; onChange: (value: string) => void }) {
+  return (
+    <label>
+      {props.label}
+      <select value={props.value} onChange={(event) => props.onChange(event.target.value)}>
+        <option value="">Select</option>
+        {props.options.map((option) => <option key={option} value={option}>{option}</option>)}
+      </select>
+    </label>
+  );
+}
+
+function PasswordDialog(props: {
+  open: boolean;
+  invalid: boolean;
+  companyDefaultAvailable: boolean;
+  busy: boolean;
+  onCancel: () => void;
+  onSubmit: (password: string, useDefault: boolean) => void;
+}) {
+  const [password, setPassword] = useState('');
+  useEffect(() => { if (props.open) setPassword(''); }, [props.open]);
+  if (!props.open) return null;
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true">
+      <section className="modal-card">
+        <div className="icon-bubble">🔒</div>
+        <h2>Password-protected credit report</h2>
+        <p>The PDF is encrypted. Enter the report password, or use the company default kept securely on the server.</p>
+        {props.invalid && <div className="alert danger">That password did not unlock the PDF. Check it and try again.</div>}
+        <label>PDF password<input autoFocus type="password" value={password} onChange={(event) => setPassword(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && password) props.onSubmit(password, false); }} /></label>
+        <div className="button-row">
+          <button className="ghost" onClick={props.onCancel} disabled={props.busy}>Cancel</button>
+          {props.companyDefaultAvailable && <button className="secondary" onClick={() => props.onSubmit('', true)} disabled={props.busy}>Use company default</button>}
+          <button className="primary" onClick={() => props.onSubmit(password, false)} disabled={props.busy || !password}>Unlock & parse</button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function UploadView({ onParsed }: { onParsed: (result: ParseResponse) => void }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [passwordPrompt, setPasswordPrompt] = useState({ open: false, invalid: false, companyDefaultAvailable: false });
+
+  const submit = async (password = '', useDefault = false) => {
+    if (!file) return;
+    setBusy(true);
+    setError('');
+    const form = new FormData();
+    form.append('file', file);
+    if (password) form.append('pdfPassword', password);
+    if (useDefault) form.append('useDefaultPassword', 'true');
+    try {
+      const result = await api<ParseResponse>('/api/upload/credit-report', { method: 'POST', body: form });
+      setPasswordPrompt({ open: false, invalid: false, companyDefaultAvailable: false });
+      onParsed(result);
+    } catch (caught) {
+      const typed = caught as Error & { payload?: { code?: string; invalidPassword?: boolean; companyDefaultAvailable?: boolean } };
+      if (typed.payload?.code === 'PDF_PASSWORD_REQUIRED') {
+        setPasswordPrompt({ open: true, invalid: Boolean(typed.payload.invalidPassword), companyDefaultAvailable: Boolean(typed.payload.companyDefaultAvailable) });
+      } else {
+        setError(typed.message);
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <section className="panel upload-panel">
+        <div className="section-heading"><div><p className="eyebrow">Credit report</p><h2>Upload and analyse</h2></div><span className="pill">Protected PDF flow enabled</span></div>
+        <div className="drop-zone" onClick={() => inputRef.current?.click()}>
+          <input ref={inputRef} hidden type="file" accept="application/pdf,.pdf" onChange={(event) => setFile(event.target.files?.[0] || null)} />
+          <div className="upload-icon">PDF</div>
+          <strong>{file?.name || 'Choose a PDF report'}</strong>
+          <span>{file ? `${(file.size / 1024).toFixed(0)} KB ready to parse` : 'Click here to select a Datanamix credit report'}</span>
+        </div>
+        <div className="info-grid">
+          <article><b>Protected PDFs</b><span>A password box opens only when the file is encrypted.</span></article>
+          <article><b>Client capture</b><span>After parsing, complete personal, employment, affordability and banking information.</span></article>
+          <article><b>Sales Coach</b><span>Debt Review, Removal, Mediation and Credit Profile Investigation routing.</span></article>
+        </div>
+        {error && <div className="alert danger">{error}</div>}
+        <button className="primary large" disabled={!file || busy} onClick={() => submit()}>{busy ? 'Analysing report…' : 'Analyse credit report'}</button>
+      </section>
+      <PasswordDialog
+        open={passwordPrompt.open}
+        invalid={passwordPrompt.invalid}
+        companyDefaultAvailable={passwordPrompt.companyDefaultAvailable}
+        busy={busy}
+        onCancel={() => setPasswordPrompt({ open: false, invalid: false, companyDefaultAvailable: false })}
+        onSubmit={submit}
+      />
+    </>
+  );
+}
+
+function PersonForm(props: {
+  title: string;
+  subtitle: string;
+  person: PersonDetails;
+  setPersonField: <K extends keyof PersonDetails>(field: K, value: PersonDetails[K]) => void;
+  setBankField: <K extends keyof BankDetails>(field: K, value: BankDetails[K]) => void;
+}) {
+  const person = props.person;
+  return (
+    <div className="form-section-stack">
+      <section className="panel form-panel">
+        <div className="section-heading"><div><p className="eyebrow">{props.subtitle}</p><h2>{props.title}</h2></div></div>
+        <div className="form-grid three">
+          <Field label="First name" value={person.firstName} onChange={(value) => props.setPersonField('firstName', value)} />
+          <Field label="Second name" value={person.secondName} onChange={(value) => props.setPersonField('secondName', value)} />
+          <Field label="Surname" value={person.surname} onChange={(value) => props.setPersonField('surname', value)} />
+          <Field label="ID number" value={person.idNumber} inputMode="numeric" onChange={(value) => props.setPersonField('idNumber', value)} />
+          <Field label="Date of birth" type="date" value={person.dateOfBirth} onChange={(value) => props.setPersonField('dateOfBirth', value)} />
+          <SelectField label="Gender" value={person.gender} options={['Female', 'Male', 'Non-binary', 'Prefer not to say']} onChange={(value) => props.setPersonField('gender', value)} />
+          <SelectField label="Marital status" value={person.maritalStatus} options={['Single', 'Married in community of property', 'Married out of community of property', 'Divorced', 'Widowed', 'Life partner']} onChange={(value) => props.setPersonField('maritalStatus', value)} />
+          <Field label="Cellphone" value={person.phone} inputMode="tel" onChange={(value) => props.setPersonField('phone', value)} />
+          <Field label="Alternative number" value={person.alternativePhone} inputMode="tel" onChange={(value) => props.setPersonField('alternativePhone', value)} />
+          <Field label="WhatsApp" value={person.whatsapp} inputMode="tel" onChange={(value) => props.setPersonField('whatsapp', value)} />
+          <Field label="Email" type="email" value={person.email} inputMode="email" onChange={(value) => props.setPersonField('email', value)} />
+        </div>
+        <div className="form-grid two address-grid">
+          <label className="span-two">Physical address<textarea rows={3} value={person.physicalAddress} onChange={(event) => props.setPersonField('physicalAddress', event.target.value)} /></label>
+          <Field label="Suburb" value={person.suburb} onChange={(value) => props.setPersonField('suburb', value)} />
+          <Field label="City / Town" value={person.city} onChange={(value) => props.setPersonField('city', value)} />
+          <Field label="Province" value={person.province} onChange={(value) => props.setPersonField('province', value)} />
+          <Field label="Postal code" value={person.postalCode} inputMode="numeric" onChange={(value) => props.setPersonField('postalCode', value)} />
+        </div>
+      </section>
+
+      <section className="panel form-panel">
+        <div className="section-heading"><div><p className="eyebrow">Affordability</p><h2>Employment and income</h2></div></div>
+        <div className="form-grid three">
+          <Field label="Employer" value={person.employer} onChange={(value) => props.setPersonField('employer', value)} />
+          <Field label="Occupation" value={person.occupation} onChange={(value) => props.setPersonField('occupation', value)} />
+          <Field label="Date employed" type="date" value={person.dateEmployed} onChange={(value) => props.setPersonField('dateEmployed', value)} />
+          <SelectField label="Salary frequency" value={person.salaryFrequency} options={['Weekly', 'Fortnightly', 'Monthly']} onChange={(value) => props.setPersonField('salaryFrequency', value)} />
+          <Field label="Gross salary" type="number" value={person.grossSalary} inputMode="decimal" onChange={(value) => props.setPersonField('grossSalary', Number(value || 0))} />
+          <Field label="Nett salary" type="number" value={person.nettSalary} inputMode="decimal" onChange={(value) => props.setPersonField('nettSalary', Number(value || 0))} />
+          <Field label="Monthly household budget / living expenses" type="number" value={person.monthlyLivingExpenses} inputMode="decimal" onChange={(value) => props.setPersonField('monthlyLivingExpenses', Number(value || 0))} />
+        </div>
+      </section>
+
+      <section className="panel form-panel banking-panel">
+        <div className="section-heading"><div><p className="eyebrow">Debit-order readiness</p><h2>Banking information</h2></div><span className="pill">Verify against bank statement</span></div>
+        <div className="form-grid three">
+          <Field label="Account holder" value={person.bank.accountHolder} onChange={(value) => props.setBankField('accountHolder', value)} />
+          <SelectField label="Bank name" value={person.bank.bankName} options={['Absa', 'African Bank', 'Capitec', 'Discovery Bank', 'FNB', 'Investec', 'Nedbank', 'Standard Bank', 'TymeBank', 'Other']} onChange={(value) => props.setBankField('bankName', value)} />
+          <SelectField label="Account type" value={person.bank.accountType} options={['Cheque / Current', 'Savings', 'Transmission']} onChange={(value) => props.setBankField('accountType', value)} />
+          <Field label="Branch code" value={person.bank.branchCode} inputMode="numeric" onChange={(value) => props.setBankField('branchCode', value)} />
+          <Field label="Account number" value={person.bank.accountNumber} inputMode="numeric" onChange={(value) => props.setBankField('accountNumber', value)} />
+          <SelectField label="Preferred debit-order day" value={person.bank.debitOrderDay} options={Array.from({ length: 31 }, (_, index) => String(index + 1))} onChange={(value) => props.setBankField('debitOrderDay', value)} />
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function scoreStatus(client: Client) {
+  if (client.scoreManuallyVerified) return { label: 'Manually verified', className: 'verified' };
+  if (!client.scoreFound) return { label: 'Score not found', className: 'review' };
+  if (client.scoreNeedsReview) return { label: 'Needs verification', className: 'review' };
+  return { label: `Parser confidence ${client.scoreConfidence}%`, className: 'verified' };
+}
+
+function ClientCapture(props: { client: Client; onSaved: (client: Client) => void; onOpenCoach: () => void }) {
+  const [draft, setDraft] = useState<Client>(() => normalizeClient(props.client));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+  const liveCompletion = useMemo(() => calculateCompletion(draft), [draft]);
 
   useEffect(() => {
-    health()
-      .then(() => setApiStatus('online'))
-      .catch(() => setApiStatus('offline'))
-      .finally(reload);
-  }, []);
+    setDraft(normalizeClient(props.client));
+    setError('');
+    setMessage('');
+  }, [props.client]);
 
-  async function runAction(action: string, payload: any = {}, successText = 'Done') {
-    if (!selectedLead?.id) return;
-    setLoading(true);
+  const setPrimary = <K extends keyof PersonDetails>(field: K, value: PersonDetails[K]) => {
+    setDraft((current) => ({ ...current, [field]: value }));
+  };
+  const setPrimaryBank = <K extends keyof BankDetails>(field: K, value: BankDetails[K]) => {
+    setDraft((current) => ({ ...current, bank: { ...current.bank, [field]: value } }));
+  };
+  const setSpouse = <K extends keyof PersonDetails>(field: K, value: PersonDetails[K]) => {
+    setDraft((current) => ({ ...current, spouse: { ...current.spouse, [field]: value } }));
+  };
+  const setSpouseBank = <K extends keyof BankDetails>(field: K, value: BankDetails[K]) => {
+    setDraft((current) => ({ ...current, spouse: { ...current.spouse, bank: { ...current.spouse.bank, [field]: value } } }));
+  };
+
+  const save = async () => {
+    setBusy(true);
     setError('');
     setMessage('');
     try {
-      await leadAction(selectedLead.id, action, payload);
-      setMessage(successText);
-      await reload();
-    } catch (err: any) {
-      setError(err.message || 'Action failed');
+      const result = await api<{ success: boolean; client: Client }>(`/api/clients/${draft.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(draft)
+      });
+      const saved = normalizeClient(result.client);
+      setDraft(saved);
+      props.onSaved(saved);
+      setMessage('Client details, application type and banking information were saved.');
+    } catch (caught) {
+      setError((caught as Error).message);
     } finally {
-      setLoading(false);
+      setBusy(false);
     }
-  }
+  };
 
   return (
-    <div className="appShell">
-      <aside className="sidebar">
-        <div className="brand">
-          <div className="brandMark">FT</div>
-          <div>
-            <h1>Fin-Tastic</h1>
-            <p>Sales Coach</p>
-          </div>
-        </div>
-
-        <div className="statusCard">
-          <span className={apiStatus === 'online' ? 'dot online' : 'dot offline'} />
-          API {apiStatus}
-        </div>
-
-        <nav>
-          {tabs.map((tab) => {
-            const Icon = tab.icon;
-            return (
-              <button key={tab.id} className={activeTab === tab.id ? 'navBtn active' : 'navBtn'} onClick={() => setActiveTab(tab.id)}>
-                <Icon size={18} />
-                {tab.label}
-              </button>
-            );
-          })}
-        </nav>
-      </aside>
-
-      <main className="main">
-        <header className="topbar">
-          <div>
-            <p className="eyebrow">Consultant closing desk</p>
-            <h2>{activeTab === 'upload' ? 'Upload & Parse Credit Report' : activeTab === 'coach' ? 'Sales Coach' : activeTab === 'closing' ? 'Close The Sale' : 'Admin Handoff Queue'}</h2>
-          </div>
-          <button className="ghostBtn" onClick={reload}><RefreshCcw size={16} /> Refresh</button>
-        </header>
-
-        {message && <div className="notice success"><CheckCircle2 size={18} /> {message}</div>}
-        {error && <div className="notice error"><AlertCircle size={18} /> {error}</div>}
-
-        {activeTab === 'upload' && <UploadScreen onUploaded={async (leadId) => { await reload(); setSelectedLeadId(leadId); setActiveTab('coach'); }} setError={setError} setMessage={setMessage} setLoading={setLoading} loading={loading} />}
-        {activeTab === 'coach' && <CoachScreen leads={leads} selectedLead={selectedLead} setSelectedLeadId={setSelectedLeadId} />}
-        {activeTab === 'closing' && <ClosingScreen selectedLead={selectedLead} loading={loading} runAction={runAction} />}
-        {activeTab === 'admin' && <AdminScreen handoffs={handoffs} />}
-      </main>
-    </div>
-  );
-}
-
-function UploadScreen({ onUploaded, setError, setMessage, setLoading, loading }: any) {
-  const [file, setFile] = useState<File | null>(null);
-  const [clientName, setClientName] = useState('');
-  const [manual, setManual] = useState({ client_name: '', phone: '', email: '', credit_score: '', debt_review_flag: false, active_balance_total: '', arrears_total: '' });
-
-  async function submitUpload(e: any) {
-    e.preventDefault();
-    if (!file) return setError('Choose a PDF credit report first.');
-    setLoading(true);
-    setError('');
-    setMessage('');
-    try {
-      const data = await uploadCreditReport(file, clientName);
-      setMessage('Credit report parsed and lead created.');
-      onUploaded(data.lead.id);
-    } catch (err: any) {
-      setError(err.message || 'Upload failed');
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function submitManual(e: any) {
-    e.preventDefault();
-    setLoading(true);
-    setError('');
-    setMessage('');
-    try {
-      const payload = { ...manual, credit_score: manual.credit_score === '' ? null : Number(manual.credit_score), active_balance_total: Number(manual.active_balance_total || 0), arrears_total: Number(manual.arrears_total || 0) };
-      const data = await createManualLead(payload);
-      setMessage('Manual lead created.');
-      onUploaded(data.lead.id);
-    } catch (err: any) {
-      setError(err.message || 'Manual lead failed');
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  return (
-    <div className="grid two">
-      <section className="card heroCard">
-        <h3>Parse PDF Credit Report</h3>
-        <p>Upload a Datanamix, XDS, TransUnion, Experian or Compuscan-style PDF. The backend extracts the client, accounts, balances, arrears and debt review signals.</p>
-        <form onSubmit={submitUpload} className="stack">
-          <label>Client name override, optional</label>
-          <input value={clientName} onChange={(e) => setClientName(e.target.value)} placeholder="Example: Yusuf Daniels" />
-          <label>PDF credit report</label>
-          <input type="file" accept="application/pdf" onChange={(e) => setFile(e.target.files?.[0] || null)} />
-          <button className="primaryBtn" disabled={loading}>{loading ? 'Working...' : 'Upload & Coach Lead'}</button>
-        </form>
-      </section>
-
-      <section className="card">
-        <h3>Create Manual Test Lead</h3>
-        <p>Use this when you want to test the sales coach without uploading a PDF.</p>
-        <form onSubmit={submitManual} className="stack">
-          <input placeholder="Client name" value={manual.client_name} onChange={(e) => setManual({ ...manual, client_name: e.target.value })} />
-          <input placeholder="Phone" value={manual.phone} onChange={(e) => setManual({ ...manual, phone: e.target.value })} />
-          <input placeholder="Email" value={manual.email} onChange={(e) => setManual({ ...manual, email: e.target.value })} />
-          <input placeholder="Credit score, e.g. 0" value={manual.credit_score} onChange={(e) => setManual({ ...manual, credit_score: e.target.value })} />
-          <input placeholder="Total active balance" value={manual.active_balance_total} onChange={(e) => setManual({ ...manual, active_balance_total: e.target.value })} />
-          <input placeholder="Total arrears" value={manual.arrears_total} onChange={(e) => setManual({ ...manual, arrears_total: e.target.value })} />
-          <label className="checkRow"><input type="checkbox" checked={manual.debt_review_flag} onChange={(e) => setManual({ ...manual, debt_review_flag: e.target.checked })} /> Debt review flag</label>
-          <button className="secondaryBtn" disabled={loading}>Create Manual Lead</button>
-        </form>
-      </section>
-    </div>
-  );
-}
-
-function LeadPicker({ leads, selectedLead, setSelectedLeadId }: any) {
-  return (
-    <div className="leadPicker">
-      <label>Selected lead</label>
-      <select value={selectedLead?.id || ''} onChange={(e) => setSelectedLeadId(e.target.value)}>
-        {leads.map((lead: any) => <option key={lead.id} value={lead.id}>{lead.client_name} — {lead.recommended_service}</option>)}
-      </select>
-    </div>
-  );
-}
-
-function CoachScreen({ leads, selectedLead, setSelectedLeadId }: any) {
-  if (!selectedLead) return <Empty title="No leads yet" text="Upload a credit report or create a manual lead first." />;
-  const coach = selectedLead.sales_coach || {};
-  const parsed = selectedLead.parsed || {};
-  const totals = parsed.totals || {};
-  const report = parsed.report || {};
-  return (
-    <div className="stack gapLarge">
-      <LeadPicker leads={leads} selectedLead={selectedLead} setSelectedLeadId={setSelectedLeadId} />
-      <section className="coachHero">
+    <div className="view-stack capture-view">
+      <section className="hero-card capture-hero">
         <div>
-          <p className="eyebrow">Recommended sale</p>
-          <h3>{coach.service_recommendation}</h3>
-          <p>{coach.reason}</p>
+          <p className="eyebrow">Client capture</p>
+          <h2>{draft.fullName || [draft.firstName, draft.surname].filter(Boolean).join(' ') || 'New client'}</h2>
+          <p>{draft.report.bureau ? `${draft.report.bureau} report attached` : 'Credit report not uploaded yet'} · {draft.serviceType}</p>
         </div>
-        <span className={badgeClass(coach.lead_temperature)}>{coach.lead_temperature}</span>
+        <div className="completion-box"><span>Capture completion</span><strong>{liveCompletion}%</strong><div><i style={{ width: `${liveCompletion}%` }} /></div></div>
       </section>
 
-      <div className="statsGrid">
-        <Stat label="Credit score" value={report.credit_score ?? 'Not found'} />
-        <Stat label="Debt review" value={report.debt_review_flag ? 'Detected' : 'Not detected'} />
-        <Stat label="Balance total" value={money(totals.active_balance_total)} />
-        <Stat label="Suggested reduced" value={money(totals.reduced_total)} />
+      <section className="panel application-selector">
+        <div><p className="eyebrow">Application structure</p><h2>Single or joint application</h2><p>Select Joint to open a complete spouse/co-applicant capture section.</p></div>
+        <div className="segment-control">
+          <button className={draft.applicationType === 'Single' ? 'active' : ''} onClick={() => setDraft((current) => ({ ...current, applicationType: 'Single' }))}>Single application</button>
+          <button className={draft.applicationType === 'Joint' ? 'active' : ''} onClick={() => setDraft((current) => ({ ...current, applicationType: 'Joint' }))}>Joint application</button>
+        </div>
+      </section>
+
+      <section className={`panel score-verification ${scoreStatus(draft).className}`}>
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Credit score verification</p>
+            <h2>Confirm the client’s final bureau score</h2>
+            <p>The parser now uses the labelled Final Score row and ignores score-band numbers, dates, balances and account totals.</p>
+          </div>
+          <span className={`score-status ${scoreStatus(draft).className}`}>{scoreStatus(draft).label}</span>
+        </div>
+        <div className="score-verification-grid">
+          <label>
+            Client credit score
+            <input
+              type="number"
+              min="0"
+              max="999"
+              inputMode="numeric"
+              value={draft.creditScore ?? ''}
+              placeholder="Enter score shown on report"
+              onChange={(event) => {
+                const raw = event.target.value;
+                setDraft((current) => ({
+                  ...current,
+                  creditScore: raw === '' ? null : Math.max(0, Math.min(999, Number(raw))),
+                  scoreFound: raw !== '',
+                  scoreNeedsReview: raw === '',
+                  scoreManuallyVerified: raw !== ''
+                }));
+              }}
+            />
+          </label>
+          <article>
+            <span>Detected from</span>
+            <strong>{draft.scoreSource || 'No labelled score detected'}</strong>
+            <small>{draft.scoreRawContext || 'Upload a report or capture the score manually.'}</small>
+          </article>
+          <article>
+            <span>Risk category</span>
+            <strong>{draft.riskCategory || 'Not detected'}</strong>
+            <small>{draft.scoreCandidates.length ? `${draft.scoreCandidates.length} labelled candidate${draft.scoreCandidates.length === 1 ? '' : 's'} checked` : 'No candidate values available'}</small>
+          </article>
+        </div>
+        {draft.scoreNeedsReview && !draft.scoreManuallyVerified && (
+          <div className="alert warn">Check the number printed under “Final Score” in the PDF before presenting the Sales Coach recommendation.</div>
+        )}
+        {draft.scoreManuallyVerified && (
+          <div className="alert success">This score will be treated as manually verified when you save the client.</div>
+        )}
+      </section>
+
+      <PersonForm title="Primary applicant personal information" subtitle="Primary applicant" person={draft} setPersonField={setPrimary} setBankField={setPrimaryBank} />
+
+      {draft.applicationType === 'Joint' && (
+        <div className="joint-divider">
+          <div><span>Joint application</span><h2>Spouse / co-applicant</h2></div>
+          <PersonForm title="Spouse / co-applicant personal information" subtitle="Joint applicant" person={draft.spouse} setPersonField={setSpouse} setBankField={setSpouseBank} />
+        </div>
+      )}
+
+      {error && <div className="alert danger">{error}</div>}
+      {message && <div className="alert success">{message}</div>}
+      <section className="save-bar">
+        <div><strong>{draft.applicationType} application</strong><span>Save before sending mandates, signature links or handing over to admin.</span></div>
+        <div className="button-row">
+          <button className="ghost" onClick={props.onOpenCoach}>View Sales Coach</button>
+          <button className="primary large" disabled={busy} onClick={save}>{busy ? 'Saving…' : 'Save client details'}</button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function SalesCoachPanel({ coach }: { coach: Coach }) {
+  const [goldenAnswers, setGoldenAnswers] = useState<Record<number, 'yes' | 'no'>>({});
+
+  useEffect(() => {
+    setGoldenAnswers({});
+  }, [coach.service, coach.headline]);
+
+  const answeredCount = Object.keys(goldenAnswers).length;
+  const cpiTriggers = [
+    coach.flags.scoreInCpiRange ? 'Credit score between 100 and 600' : '',
+    !coach.flags.hasOutstandingBalances ? 'No active balances' : '',
+    !coach.flags.debtReviewListed ? 'No debt-review flag' : ''
+  ].filter(Boolean);
+
+  return (
+    <section className={`panel coach-panel ${coach.flags.creditProfileInvestigationCandidate ? 'cpi' : ''}`}>
+      <div className="section-heading"><div><p className="eyebrow">Sales Opportunity Engine</p><h2>{coach.headline}</h2></div><div className="coach-badges"><span className={`urgency ${coach.urgency.toLowerCase()}`}>{coach.urgency}</span><span className="service-badge">{coach.service}</span></div></div>
+
+      {coach.flags.creditProfileInvestigationCandidate && (
+        <div className="opportunity-callout">
+          <div><span>CPI opportunity rule active</span><strong>{cpiTriggers.join(' · ')}</strong></div>
+          <b>Potential Credit Profile Investigation sale</b>
+        </div>
+      )}
+
+      {coach.flags.scoreZeroRule && (
+        <div className="opportunity-callout">
+          <div><span>Exact score-zero rule active</span><strong>Credit score 0 routes to Debt Review Removal</strong></div>
+          <b>{coach.flags.doubleSaleCandidate ? 'Removal plus Mediation opportunity' : 'Debt Review Removal opportunity'}</b>
+        </div>
+      )}
+
+      {coach.additionalServices.length > 0 && (
+        <div className="alert warn"><strong>Additional recommendation:</strong> {coach.additionalServices.join(', ')} because active balances remain.</div>
+      )}
+
+      <section className="golden-section">
+        <div className="golden-heading">
+          <div><p className="eyebrow">Consultant qualification checklist</p><h3>5 Golden Questions</h3><p>Ask these before presenting the service or sending a debit-order mandate.</p></div>
+          <div className="golden-progress"><strong>{answeredCount}/5</strong><span>answered</span></div>
+        </div>
+        <div className="golden-grid">
+          {coach.goldenQuestions.map((item, index) => (
+            <article className={`golden-card ${goldenAnswers[index] || ''}`} key={`${item.question}-${index}`}>
+              <div className="golden-number">{index + 1}</div>
+              <div className="golden-copy"><strong>{item.question}</strong><small>{item.whyItMatters}</small></div>
+              <div className="answer-buttons">
+                <button type="button" className={goldenAnswers[index] === 'yes' ? 'selected yes' : ''} onClick={() => setGoldenAnswers((current) => ({ ...current, [index]: 'yes' }))}>Yes</button>
+                <button type="button" className={goldenAnswers[index] === 'no' ? 'selected no' : ''} onClick={() => setGoldenAnswers((current) => ({ ...current, [index]: 'no' }))}>No</button>
+              </div>
+            </article>
+          ))}
+        </div>
+        <div className="golden-note">A “No” answer does not automatically disqualify the client. Verify the reason, capture the correct details and choose a compliant next step.</div>
+      </section>
+
+      <div className="coach-grid">
+        <article className="script-card"><span>Suggested call opening</span><blockquote>{coach.openingScript}</blockquote></article>
+        <article><h3>Why this route</h3><ul>{coach.reasons.map((reason, index) => <li key={`${reason}-${index}`}>{reason}</li>)}</ul></article>
+        <article><h3>Product qualifying questions</h3><ol>{coach.qualifyingQuestions.map((question, index) => <li key={`${question}-${index}`}>{question}</li>)}</ol></article>
+        <article><h3>Consultant next steps</h3><ol>{coach.nextSteps.map((step, index) => <li key={`${step}-${index}`}>{step}</li>)}</ol></article>
       </div>
 
-      <div className="grid two">
-        <section className="card scriptCard">
-          <h3>Opening Script</h3>
-          <p>{coach.opening_script}</p>
-        </section>
-        <section className="card scriptCard important">
-          <h3>Mediation Explanation</h3>
-          <p>{coach.mediation_explanation}</p>
-        </section>
-      </div>
+      {coach.pricing && (
+        <div className="pricing-section">
+          <div><p className="eyebrow">Service fee</p><h3>{money(coach.pricing.onceOff)} total</h3><p>{coach.pricing.description}</p></div>
+          <div className="payment-plans">{coach.pricing.paymentPlans.map((plan) => (
+            <article key={plan.months}><span>{plan.label}</span><strong>{money(plan.monthlyAmount)}</strong><small>{plan.months === 1 ? 'single payment' : 'per month'}</small></article>
+          ))}</div>
+        </div>
+      )}
 
-      <div className="grid three">
-        <ListCard title="Questions to ask" items={coach.key_questions || []} />
-        <ListCard title="Next best actions" items={coach.next_best_actions || []} />
-        <ListCard title="Compliance warnings" items={coach.compliance_warnings || []} warning />
-      </div>
-
-      <section className="card">
-        <h3>Objection Handling</h3>
-        <div className="objections">
-          {(coach.objections || []).map((item: any, index: number) => (
-            <div className="objection" key={index}>
-              <strong>{item.objection}</strong>
-              <p>{item.reply}</p>
-            </div>
+      <section className="objection-section">
+        <div className="section-heading"><div><p className="eyebrow">Conversation support</p><h3>Objection handling</h3></div><span className="pill">{coach.objectionHandlers.length} responses</span></div>
+        <div className="objection-grid">
+          {coach.objectionHandlers.map((handler, index) => (
+            <details className="objection-card" key={`${handler.objection}-${index}`} open={index === 0}>
+              <summary><span>Client says</span><strong>“{handler.objection}”</strong></summary>
+              <div><span>Suggested response</span><p>{handler.response}</p></div>
+            </details>
           ))}
         </div>
       </section>
-
-      <section className="card">
-        <h3>Parsed Accounts</h3>
-        <div className="tableWrap">
-          <table>
-            <thead>
-              <tr><th>Creditor</th><th>Current</th><th>Arrears</th><th>Installment</th><th>Reduced</th><th>Status</th><th>Last Paid</th></tr>
-            </thead>
-            <tbody>
-              {(parsed.accounts || []).map((acc: any) => (
-                <tr key={acc.id}>
-                  <td>{acc.creditor}{acc.furniture_account ? <span className="miniTag">Furniture</span> : null}</td>
-                  <td>{money(acc.current_balance)}</td>
-                  <td>{money(acc.arrears)}</td>
-                  <td>{money(acc.monthly_installment)}</td>
-                  <td>{money(acc.reduced_amount)}</td>
-                  <td>{acc.status}</td>
-                  <td>{acc.last_paid_date || '-'}</td>
-                </tr>
-              ))}
-              {(!parsed.accounts || parsed.accounts.length === 0) && <tr><td colSpan={7}>No account rows extracted. This PDF may need OCR or parser tuning.</td></tr>}
-            </tbody>
-          </table>
-        </div>
-      </section>
-    </div>
+    </section>
   );
 }
 
-function ClosingScreen({ selectedLead, loading, runAction }: any) {
-  const [amount, setAmount] = useState('');
-  const [debitDay, setDebitDay] = useState('');
-  const [note, setNote] = useState('Sale closed and ready for admin workflow/PDA processing.');
-  if (!selectedLead) return <Empty title="No lead selected" text="Upload or select a lead first." />;
-  const actions = selectedLead.actions || {};
-  const suggested = selectedLead.sales_coach?.money_summary?.suggested_reduced_total || 0;
-
+function ClientDetail(props: { client: Client; warnings?: string[]; confidence?: number; onEdit: () => void; onUpload: () => void }) {
+  const client = normalizeClient(props.client);
+  const included = client.accounts.filter((account) => account.included);
   return (
-    <div className="grid closingGrid">
-      <section className="card">
-        <p className="eyebrow">Current lead</p>
-        <h3>{selectedLead.client_name}</h3>
-        <p>{selectedLead.recommended_service}</p>
-        <div className="statusList">
-          <StatusLine label="Signature link" done={!!actions.signature_link} />
-          <StatusLine label="Document upload link" done={!!actions.document_link} />
-          <StatusLine label="NuPay mandate" done={!!actions.nupay_mandate} />
-          <StatusLine label="Sale closed" done={!!actions.sale_closed} />
-          <StatusLine label="Admin handoff" done={!!actions.admin_handoff} />
+    <div className="view-stack">
+      <section className="hero-card">
+        <div>
+          <p className="eyebrow">{client.report.bureau || 'Client record'} {client.report.reportReference ? `· ${client.report.reportReference}` : ''}</p>
+          <h2>{client.fullName || 'Unnamed client'}</h2>
+          <p>{client.idNumber || 'ID not captured'} · {client.applicationType} · Score {client.scoreFound ? client.creditScore : 'Not found'} · {client.scoreManuallyVerified ? 'Manually verified' : client.scoreSource || 'Unverified'} · {client.status}</p>
         </div>
+        <div className="hero-actions"><span className={`urgency ${client.coach.urgency.toLowerCase()}`}>{client.coach.urgency}</span><strong>{client.serviceType}</strong><div className="button-row"><button className="ghost light" onClick={props.onEdit}>Edit client details</button><button className="ghost light" onClick={props.onUpload}>Upload report</button></div></div>
       </section>
 
-      <section className="card actionPanel">
-        <h3>Close the Sale</h3>
-        <p className="muted">Use these buttons in order while speaking to the client.</p>
-        <button className="actionBtn" disabled={loading} onClick={() => runAction('send-signature-link', {}, 'Signature link created.')}><Send size={18} /> Send Signature Link</button>
-        <button className="actionBtn" disabled={loading} onClick={() => runAction('send-document-link', {}, 'Document upload link created.')}><FileUp size={18} /> Send Document Upload Link</button>
-        <div className="mandateBox">
-          <label>NuPay amount</label>
-          <input placeholder={money(suggested)} value={amount} onChange={(e) => setAmount(e.target.value)} />
-          <label>Debit day</label>
-          <input placeholder="1 to 31" value={debitDay} onChange={(e) => setDebitDay(e.target.value)} />
-          <button className="actionBtn" disabled={loading} onClick={() => runAction('send-nupay-mandate', { amount: Number(amount || suggested), debit_day: debitDay }, 'NuPay mandate placeholder created.')}><WalletCards size={18} /> Send NuPay Mandate</button>
-        </div>
-        <label>Consultant/Admin note</label>
-        <textarea value={note} onChange={(e) => setNote(e.target.value)} />
-        <button className="primaryBtn" disabled={loading} onClick={() => runAction('close-sale', { note }, 'Sale marked as closed.')}><CheckCircle2 size={18} /> Mark Sale as Closed</button>
-        <button className="secondaryBtn" disabled={loading} onClick={() => runAction('pass-to-admin', { note }, 'Lead passed to admin.')}><ShieldCheck size={18} /> Pass to Admin</button>
-      </section>
-
-      <section className="card scriptCard">
-        <h3>Closing Script</h3>
-        <p>{selectedLead.sales_coach?.closing_script}</p>
-        <h4>Remember</h4>
-        <p>Do not guarantee court removal. Say mediation supports the application by showing affordability, creditor engagement, and a plan for remaining balances.</p>
-      </section>
-    </div>
-  );
-}
-
-function AdminScreen({ handoffs }: any) {
-  if (!handoffs.length) return <Empty title="No admin handoffs yet" text="Once a consultant passes a sale to admin, it will appear here." />;
-  return (
-    <div className="stack">
-      {handoffs.map((handoff: any) => (
-        <section className="card handoff" key={handoff.id}>
-          <div>
-            <p className="eyebrow">{handoff.admin_stage}</p>
-            <h3>{handoff.client_name}</h3>
-            <p>{handoff.recommended_service}</p>
-            <p className="muted">{handoff.handoff_note}</p>
+      {(Boolean(props.warnings?.length) || props.confidence !== undefined) && (
+        <section className="panel compact-panel">
+          <div className="section-heading"><h3>Parser quality</h3>{props.confidence !== undefined && <span className="pill">Confidence {props.confidence}%</span>}</div>
+          <div className={`score-quality-line ${scoreStatus(client).className}`}>
+            <div><span>Credit score</span><strong>{client.scoreFound ? client.creditScore : 'Not found'}</strong></div>
+            <div><span>Source</span><strong>{client.scoreSource || 'Manual verification required'}</strong></div>
+            <div><span>Status</span><strong>{scoreStatus(client).label}</strong></div>
           </div>
-          <div className="handoffMeta">
-            <span className={badgeClass(handoff.lead_temperature)}>{handoff.lead_temperature}</span>
-            <span>{new Date(handoff.created_at).toLocaleString()}</span>
-          </div>
+          {client.scoreRawContext && <div className="score-context"><span>Matched report text</span><code>{client.scoreRawContext}</code></div>}
+          {(props.warnings || []).map((warning) => <div className="alert warn" key={warning}>{warning}</div>)}
+          {!props.warnings?.length && !client.scoreNeedsReview && <div className="alert success">The report passed the current parser checks.</div>}
         </section>
-      ))}
+      )}
+
+      <section className="metric-grid">
+        <article><span>Outstanding debt</span><strong>{money(client.coach.totals.outstanding)}</strong></article>
+        <article><span>Total arrears</span><strong>{money(client.coach.totals.arrears)}</strong></article>
+        <article><span>Current instalments</span><strong>{money(client.coach.totals.originalInstalment)}</strong></article>
+        <article><span>Capture complete</span><strong>{client.detailsCompletion}%</strong></article>
+      </section>
+
+      <section className="panel client-summary">
+        <div className="section-heading"><div><p className="eyebrow">Captured information</p><h2>Personal and banking summary</h2></div><span className="pill">{client.applicationType}</span></div>
+        <div className="summary-grid">
+          <article><span>Primary contact</span><strong>{client.phone || 'Not captured'}</strong><small>{client.email || 'Email not captured'}</small></article>
+          <article><span>Employment</span><strong>{client.employer || 'Not captured'}</strong><small>{client.occupation || 'Occupation not captured'}</small></article>
+          <article><span>Nett income</span><strong>{money(client.nettSalary)}</strong><small>Budget {money(client.monthlyLivingExpenses)}</small></article>
+          <article><span>Bank account</span><strong>{client.bank.bankName || 'Not captured'}</strong><small>{client.bank.accountType || 'Account type not captured'} · •••{client.bank.accountNumber.slice(-4) || '----'}</small></article>
+          {client.applicationType === 'Joint' && <article><span>Joint applicant</span><strong>{client.spouse.fullName || [client.spouse.firstName, client.spouse.surname].filter(Boolean).join(' ') || 'Not captured'}</strong><small>{client.spouse.idNumber || 'ID not captured'}</small></article>}
+        </div>
+      </section>
+
+      <SalesCoachPanel key={client.id} coach={client.coach} />
+
+      <section className="panel">
+        <div className="section-heading"><div><p className="eyebrow">Parsed debt accounts</p><h2>{client.accounts.length} accounts · {included.length} included</h2></div><span className="pill">CPA + NLR</span></div>
+        {client.accounts.length ? (
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>Source</th><th>Creditor</th><th>Account</th><th>Status</th><th>Opening</th><th>Balance</th><th>Arrears</th><th>Instalment</th><th>Reduced</th><th>Last paid</th></tr></thead>
+              <tbody>{client.accounts.map((account) => (
+                <tr key={account.id} className={!account.included ? 'excluded' : ''}>
+                  <td><span className="tiny-pill">{account.parserSource}</span></td>
+                  <td><strong>{account.creditorName}</strong><small>{account.accountType}</small>{account.isFurniture && <em>Furniture</em>}{account.isAsset && <em>Asset</em>}</td>
+                  <td>{account.accountNumber}</td><td>{account.status}</td><td>{money(account.openingBalance)}</td><td>{money(account.currentBalance)}</td><td>{money(account.arrears)}</td><td>{money(account.monthlyInstallment)}</td><td>{money(account.reducedAmount)}</td><td>{account.lastPaidDate || '—'}</td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        ) : <div className="alert info">No credit report accounts are attached to this manually created client yet.</div>}
+      </section>
     </div>
   );
 }
 
-function Stat({ label, value }: any) {
-  return <section className="stat"><span>{label}</span><strong>{value}</strong></section>;
+function ClientsView(props: { clients: Client[]; select: (client: Client) => void; createNew: () => void; busy: boolean }) {
+  return (
+    <section className="panel">
+      <div className="section-heading"><div><p className="eyebrow">Tenant database</p><h2>Clients</h2></div><div className="button-row"><span className="pill">{props.clients.length} records</span><button className="primary" onClick={props.createNew} disabled={props.busy}>{props.busy ? 'Creating…' : 'New client'}</button></div></div>
+      {!props.clients.length ? <div className="empty-state"><h2>No clients yet</h2><p>Create a manual client record or upload the first report.</p><button className="primary" onClick={props.createNew}>Create client</button></div> : (
+        <div className="client-list">{props.clients.map((rawClient) => {
+          const client = normalizeClient(rawClient);
+          return (
+            <button key={client.id} onClick={() => props.select(client)}>
+              <div><strong>{client.fullName || 'Unnamed client'}</strong><span>{client.idNumber || 'ID not captured'} · {client.applicationType} · {client.report.bureau || 'No report'}</span></div>
+              <div><b>{client.serviceType}</b><span>{client.detailsCompletion}% captured · {money(client.coach.totals.outstanding)}</span></div>
+            </button>
+          );
+        })}</div>
+      )}
+    </section>
+  );
 }
 
-function ListCard({ title, items, warning = false }: any) {
-  return <section className={warning ? 'card warningCard' : 'card'}><h3>{title}</h3><ul>{items.map((item: string, index: number) => <li key={index}>{item}</li>)}</ul></section>;
-}
+export default function App() {
+  const [view, setView] = useState<View>('dashboard');
+  const [clients, setClients] = useState<Client[]>([]);
+  const [selected, setSelected] = useState<Client | null>(null);
+  const [parseMeta, setParseMeta] = useState<{ warnings: string[]; confidence?: number }>({ warnings: [] });
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [creating, setCreating] = useState(false);
 
-function StatusLine({ label, done }: any) {
-  return <div className="statusLine"><span className={done ? 'statusIcon done' : 'statusIcon'}>{done ? '✓' : '•'}</span>{label}</div>;
-}
+  const loadClients = async () => {
+    const result = await api<{ clients: Client[] }>('/api/clients');
+    const normalized = (result.clients || []).map(normalizeClient);
+    setClients(normalized);
+    setSelected((current) => current || normalized[0] || null);
+  };
 
-function Empty({ title, text }: any) {
-  return <section className="empty"><h3>{title}</h3><p>{text}</p></section>;
+  useEffect(() => {
+    loadClients()
+      .catch((error) => setLoadError((error as Error).message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const dashboard = useMemo(() => {
+    const totalDebt = clients.reduce((sum, client) => sum + client.coach.totals.outstanding, 0);
+    const totalArrears = clients.reduce((sum, client) => sum + client.coach.totals.arrears, 0);
+    return {
+      totalDebt,
+      totalArrears,
+      removals: clients.filter((client) => client.serviceType === 'Debt Review Removal').length,
+      mediation: clients.filter((client) => client.serviceType === 'Debt Mediation').length,
+      cpi: clients.filter((client) => client.serviceType === 'Credit Profile Investigation').length
+    };
+  }, [clients]);
+
+  const updateClientState = (client: Client) => {
+    const normalized = normalizeClient(client);
+    setSelected(normalized);
+    setClients((previous) => [normalized, ...previous.filter((item) => item.id !== normalized.id)]);
+  };
+
+  const parsed = (result: ParseResponse) => {
+    const client = normalizeClient({ ...result.client, id: result.clientId });
+    updateClientState(client);
+    setParseMeta({ warnings: result.warnings || [], confidence: result.confidence });
+    setView('capture');
+  };
+
+  const createClient = async () => {
+    setCreating(true);
+    setLoadError('');
+    try {
+      const result = await api<{ success: boolean; client: Client }>('/api/clients', { method: 'POST', body: JSON.stringify({ applicationType: 'Single' }) });
+      const client = normalizeClient(result.client);
+      updateClientState(client);
+      setParseMeta({ warnings: [] });
+      setView('capture');
+    } catch (error) {
+      setLoadError((error as Error).message);
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const nav: { key: View; label: string; note: string }[] = [
+    { key: 'dashboard', label: 'Dashboard', note: 'Sales Coach and opportunity' },
+    { key: 'upload', label: 'Upload report', note: 'Protected PDF parser' },
+    { key: 'capture', label: 'Client capture', note: 'Personal, joint and banking' },
+    { key: 'clients', label: 'Clients', note: 'Khusela client database' }
+  ];
+
+  if (loading) return <main className="loading-page"><div className="spinner" /><p>Loading Fin-Tastic…</p></main>;
+
+  return (
+    <div className="app-shell">
+      <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
+        <div className="brand-lockup"><div className="brand-mark">F</div><div><strong>Fin-Tastic</strong><span>Sales Coach</span></div></div>
+        <div className="tenant-card"><span>Active tenant</span><strong>Khusela Debt Management</strong><small>Open access — logins temporarily disabled</small></div>
+        <nav>{nav.map((item) => <button key={item.key} className={view === item.key ? 'active' : ''} onClick={() => { setView(item.key); setSidebarOpen(false); }}><strong>{item.label}</strong><span>{item.note}</span></button>)}</nav>
+        <button className="primary sidebar-new" onClick={createClient} disabled={creating}>{creating ? 'Creating…' : '+ New client'}</button>
+        <div className="sidebar-footer"><strong>Opportunity rules active</strong><span>DR · DRR · Mediation · Credit Profile Investigation</span></div>
+      </aside>
+      <main className="main-panel">
+        <header className="topbar">
+          <button className="menu-button" onClick={() => setSidebarOpen((open) => !open)}>☰</button>
+          <div><p className="eyebrow">Render deployment</p><h1>{nav.find((item) => item.key === view)?.label}</h1></div>
+          <div className="topbar-status"><span className="status-dot" />Open access</div>
+        </header>
+
+        {loadError && <div className="alert danger">{loadError}</div>}
+        {view === 'upload' && <UploadView onParsed={parsed} />}
+        {view === 'clients' && <ClientsView clients={clients} select={(client) => { setSelected(client); setParseMeta({ warnings: [] }); setView('dashboard'); }} createNew={createClient} busy={creating} />}
+        {view === 'capture' && (selected ? <ClientCapture client={selected} onSaved={updateClientState} onOpenCoach={() => setView('dashboard')} /> : <section className="panel empty-state"><h2>Select or create a client</h2><p>The capture screen stores personal, joint application, employment and banking information.</p><button className="primary" onClick={createClient}>Create client</button></section>)}
+        {view === 'dashboard' && (
+          <div className="view-stack">
+            <section className="metric-grid dashboard-metrics">
+              <article><span>Clients</span><strong>{clients.length}</strong></article>
+              <article><span>Total debt found</span><strong>{money(dashboard.totalDebt)}</strong></article>
+              <article><span>Total arrears</span><strong>{money(dashboard.totalArrears)}</strong></article>
+              <article><span>CPI opportunities</span><strong>{dashboard.cpi}</strong></article>
+            </section>
+            <div className="route-strip"><span>Removal {dashboard.removals}</span><span>Mediation {dashboard.mediation}</span><span>Credit Profile Investigation {dashboard.cpi}</span></div>
+            {selected ? <ClientDetail client={selected} warnings={parseMeta.warnings} confidence={parseMeta.confidence} onEdit={() => setView('capture')} onUpload={() => setView('upload')} /> : <section className="panel empty-state"><h2>Ready for the first client</h2><p>Create a client to capture personal and banking information, or upload a Datanamix report to activate the Sales Opportunity Engine.</p><div className="button-row"><button className="secondary" onClick={createClient}>Create client</button><button className="primary" onClick={() => setView('upload')}>Upload credit report</button></div></section>}
+          </div>
+        )}
+      </main>
+    </div>
+  );
 }
