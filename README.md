@@ -1,16 +1,59 @@
-# Fin-Tastic Sales Coach - CORS/Admin Workflow Status Fix
+# Fin-Tastic Sales Coach - Separate DebiCheck + Vibe Dashboard
 
-This build fixes the browser error:
-
-`Access to fetch at http://localhost:5000/api/clients/<client_id>/admin-workflow/status from origin http://localhost:5173 has been blocked by CORS policy`
+This build updates the consultant dashboard for more motivation/healthy competition and changes NuPay so the consultant can send separate DebiChecks where applicable.
 
 ## What changed
 
-- Added a hard backend CORS fallback for every response, including errors and preflight requests.
-- Added global OPTIONS handling so PATCH/PUT/DELETE requests from the React frontend do not fail preflight.
-- Added a read-only `GET /api/clients/<client_id>/admin-workflow/status` endpoint.
-- Kept `PATCH /api/clients/<client_id>/admin-workflow/status` restricted to Admin/Manager users.
-- Added JSON error handling so real backend errors show in the UI/dev console instead of being hidden as vague CORS errors.
+### Consultant dashboard
+
+- Dashboard remains performance-only with no client names, IDs, phone numbers or case details.
+- Added a higher-energy **Khusela Growth League** layout.
+- Added motivational chips, daily mission cards and a stronger top-three podium.
+- Leaderboard still ranks consultants by:
+  - leads generated / uploaded reports
+  - DC value
+  - reduced instalment value
+  - DRR fees
+  - documents received
+  - admin handovers
+  - performance score
+
+### NuPay DebiCheck
+
+The Banking / NuPay tab now separates the two different collections:
+
+1. **Removal DebiCheck**
+   - Used only when Debt Review Removal applies.
+   - Collects the R7,000 DRR removal service fee.
+   - Consultant can split it over 1, 2 or 3 months.
+   - Consultant can choose a separate debit order start date.
+
+2. **Mediation DebiCheck**
+   - Used only when Debt Mediation / reduced payment applies.
+   - Collects the ongoing monthly reduced payment.
+   - No 1/2/3 month split is shown for mediation.
+   - Consultant can choose a separate debit order start date.
+
+For DRR + Mediation double-sale clients, the consultant can send both DebiChecks separately.
+
+## New backend routes
+
+```text
+POST /api/clients/<client_id>/mandates/removal/send
+POST /api/clients/<client_id>/mandates/removal/cancel
+GET  /api/clients/<client_id>/mandates/removal/status
+
+POST /api/clients/<client_id>/mandates/mediation/send
+POST /api/clients/<client_id>/mandates/mediation/cancel
+GET  /api/clients/<client_id>/mandates/mediation/status
+```
+
+## New public portal routes
+
+```text
+GET/POST /portal/<tenant_id>/nupay-removal/<client_id>/<token>
+GET/POST /portal/<tenant_id>/nupay-mediation/<client_id>/<token>
+```
 
 ## Run
 
@@ -18,9 +61,7 @@ This build fixes the browser error:
 START_ALL.bat
 ```
 
-## Important
-
-After replacing the files, fully stop both backend and frontend before restarting.
+## Restart fully after replacing files
 
 ```bat
 taskkill /F /IM python.exe
@@ -28,3 +69,4 @@ taskkill /F /IM node.exe
 START_ALL.bat
 ```
 
+Then hard refresh the browser with `Ctrl + F5`.
