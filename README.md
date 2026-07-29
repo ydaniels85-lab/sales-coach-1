@@ -1,59 +1,39 @@
-# Fin-Tastic Sales Coach - Separate DebiCheck + Vibe Dashboard
+# Fin-Tastic Sales Coach - Product Assessment + Floor Competition Update
 
-This build updates the consultant dashboard for more motivation/healthy competition and changes NuPay so the consultant can send separate DebiChecks where applicable.
+This build updates the consultant-facing performance dashboard and product knowledge assessment.
 
-## What changed
+## Main changes
 
-### Consultant dashboard
+- Product Knowledge assessment is now service/product focused only.
+  - Removed tenant/system/technical assessment question.
+  - Questions now cover Debt Review, Debt Review Removal, Debt Mediation, NuPay DebiCheck and sales tonality.
 
-- Dashboard remains performance-only with no client names, IDs, phone numbers or case details.
-- Added a higher-energy **Khusela Growth League** layout.
-- Added motivational chips, daily mission cards and a stronger top-three podium.
-- Leaderboard still ranks consultants by:
-  - leads generated / uploaded reports
-  - DC value
-  - reduced instalment value
-  - DRR fees
-  - documents received
-  - admin handovers
-  - performance score
+- Consultant Dashboard is now a pure competition dashboard with no client details.
+  - Individual consultant leaderboard.
+  - Team heat board.
+  - Entire floor summary.
+  - Manager commission snapshot still stores the full scoreboard metrics for review.
 
-### NuPay DebiCheck
+- Khusela consultants are grouped into teams:
+  - Team Ignite: Consultants 1-3
+  - Team Momentum: Consultants 4-6
+  - Team Phoenix: Consultants 7-10
 
-The Banking / NuPay tab now separates the two different collections:
+- Heat / thermometer scoring added.
+  - Every R5,000 in DC value / DRR fees adds a heat block.
+  - Heat is shown for each consultant, each team and the entire floor.
 
-1. **Removal DebiCheck**
-   - Used only when Debt Review Removal applies.
-   - Collects the R7,000 DRR removal service fee.
-   - Consultant can split it over 1, 2 or 3 months.
-   - Consultant can choose a separate debit order start date.
+## Metrics tracked
 
-2. **Mediation DebiCheck**
-   - Used only when Debt Mediation / reduced payment applies.
-   - Collects the ongoing monthly reduced payment.
-   - No 1/2/3 month split is shown for mediation.
-   - Consultant can choose a separate debit order start date.
-
-For DRR + Mediation double-sale clients, the consultant can send both DebiChecks separately.
-
-## New backend routes
-
-```text
-POST /api/clients/<client_id>/mandates/removal/send
-POST /api/clients/<client_id>/mandates/removal/cancel
-GET  /api/clients/<client_id>/mandates/removal/status
-
-POST /api/clients/<client_id>/mandates/mediation/send
-POST /api/clients/<client_id>/mandates/mediation/cancel
-GET  /api/clients/<client_id>/mandates/mediation/status
-```
-
-## New public portal routes
-
-```text
-GET/POST /portal/<tenant_id>/nupay-removal/<client_id>/<token>
-GET/POST /portal/<tenant_id>/nupay-mediation/<client_id>/<token>
-```
+- Leads generated / uploaded reports
+- Reduced instalment value
+- DRR removal fees
+- Total DC value
+- Documents received
+- Admin handovers
+- Consultant rank
+- Team rank
+- Floor total
 
 ## Run
 
@@ -61,12 +41,4 @@ GET/POST /portal/<tenant_id>/nupay-mediation/<client_id>/<token>
 START_ALL.bat
 ```
 
-## Restart fully after replacing files
-
-```bat
-taskkill /F /IM python.exe
-taskkill /F /IM node.exe
-START_ALL.bat
-```
-
-Then hard refresh the browser with `Ctrl + F5`.
+If old local data is not showing team fields, restart the backend once. The backend automatically merges the Khusela team fields into the local JSON database.

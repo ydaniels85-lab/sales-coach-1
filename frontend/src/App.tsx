@@ -1,16 +1,60 @@
 import { ChangeEvent, FormEvent, ReactNode, useEffect, useMemo, useState } from 'react';
+import khuselaLogo from './assets/khusela-logo.png';
+
+const isBrowserRuntime = typeof window !== 'undefined';
+
+const cleanBaseUrl = (value: string): string => value.replace(/\/$/, '');
+
+const isLocalHostName = (host: string): boolean => ['localhost', '127.0.0.1', '0.0.0.0'].includes(host);
+
+const deployedOrigin = (): string => {
+  if (!isBrowserRuntime) return 'http://localhost:5000';
+  return cleanBaseUrl(window.location.origin);
+};
+
+const defaultApiBase = (): string => {
+  if (!isBrowserRuntime) return 'http://localhost:5000';
+  const saved = cleanBaseUrl(localStorage.getItem('fintastic_sales_api') || '');
+  const host = window.location.hostname;
+  const onDeployedHost = !isLocalHostName(host);
+  const origin = deployedOrigin();
+
+  // On Render/Railway/production the frontend and Flask API are served from the same domain.
+  // Ignore old localhost:5000 values saved from desktop testing, because that breaks login online.
+  if (onDeployedHost && (!saved || saved.includes('localhost') || saved.includes('127.0.0.1') || saved.includes(':5000'))) {
+    localStorage.setItem('fintastic_sales_api', origin);
+    return origin;
+  }
+  return saved || (onDeployedHost ? origin : 'http://localhost:5000');
+};
+
+const defaultTenantId = (): string => {
+  if (!isBrowserRuntime) return 'khusela-debt-management';
+  return localStorage.getItem('fintastic_tenant_id') || 'khusela-debt-management';
+};
+
+const defaultUserId = (): string => {
+  if (!isBrowserRuntime) return 'khusela-manager-01';
+  return localStorage.getItem('fintastic_user_id') || 'khusela-manager-01';
+};
 
 type ViewKey = 'dashboard' | 'clients' | 'upload' | 'profile' | 'budget' | 'coach' | 'accounts' | 'mandate' | 'documents' | 'workflow' | 'admin' | 'knowledge' | 'settings';
 type ServiceType = 'Debt Review Sales Coach' | 'Debt Review Removal' | 'Debt Mediation' | 'Needs Manual Review';
 type Urgency = 'Low' | 'Medium' | 'High';
 
 type Tenant = { id: string; name: string; tradingName?: string; fullName?: string; ncr: string; phone?: string; fax?: string; email?: string; finalRegistrationDate?: string; physicalAddress?: string; postalAddress?: string; town?: string; userCount: number; clientCount: number };
-type TenantUser = { id: string; name: string; role: string; email: string };
+type TenantUser = { id: string; name: string; role: string; email: string; team?: string };
+
+const tenantLogoSrc = (tenant?: Tenant | null): string | null => {
+  if (!tenant) return null;
+  return tenant.id === 'khusela-debt-management' ? khuselaLogo : null;
+};
 type ConsultantMetric = {
   rank: number;
   userId: string;
   name: string;
   role: string;
+  team?: string;
   email: string;
   leadsGenerated: number;
   uploadedReports: number;
@@ -23,7 +67,33 @@ type ConsultantMetric = {
   requiredDocuments: number;
   documentCompletionRate: number;
   performanceScore: number;
+  heatBlocks?: number;
+  heatLabel?: string;
+  heatEmoji?: string;
+  progressToNextHeat?: number;
+  nextHeatGap?: number;
   lastActivityAt?: string;
+};
+
+type TeamMetric = {
+  rank: number;
+  team: string;
+  consultants: number;
+  leadsGenerated: number;
+  uploadedReports: number;
+  clientsSubmitted: number;
+  reducedInstallments: number;
+  removalFees: number;
+  dcValue: number;
+  documentsReceived: number;
+  requiredDocuments: number;
+  documentCompletionRate: number;
+  performanceScore: number;
+  heatBlocks?: number;
+  heatLabel?: string;
+  heatEmoji?: string;
+  progressToNextHeat?: number;
+  nextHeatGap?: number;
 };
 
 type ConsultantDashboardSummary = {
@@ -35,7 +105,14 @@ type ConsultantDashboardSummary = {
   removalFees: number;
   documentsReceived: number;
   clientsSubmitted: number;
+  requiredDocuments?: number;
   consultants: number;
+  teams?: number;
+  heatBlocks?: number;
+  heatLabel?: string;
+  heatEmoji?: string;
+  progressToNextHeat?: number;
+  nextHeatGap?: number;
 };
 
 type CommissionSnapshot = {
@@ -185,7 +262,7 @@ type Client = Applicant & {
   serviceTypes?: ServiceType[];
   accounts: DebtAccount[];
   coach?: CoachResult;
-  portalLinks?: { signatureLink?: string; uploadLink?: string; createdAt?: string };
+  portalLinks?: { clientPortalLink?: string; signatureLink?: string; uploadLink?: string; createdAt?: string };
   documents?: ClientDocuments;
   signature?: ClientSignature;
   nupayMandate?: NuPayMandate;
@@ -439,7 +516,7 @@ const adminTaskTemplates = (services: ServiceType[]): AdminTask[] => {
     label,
     status: 'Not Started',
     notes: '',
-    ownerRole: options.ownerRole || (phase.includes('PDA') || phase.includes('Aftercare') || phase.includes('Monitoring') ? 'Admin/PDA' : 'Admin'),
+    ownerRole: options.ownerRole || (phase.includes('PDA') || phase.includes('Collections') || phase.includes('Monitoring') ? 'Admin/PDA' : 'Admin'),
     dueBusinessDays: options.dueBusinessDays ?? null,
     dueFrom: options.dueFrom || '',
     regulationRef: options.regulationRef || '',
@@ -452,59 +529,60 @@ const adminTaskTemplates = (services: ServiceType[]): AdminTask[] => {
   services.forEach((service) => {
     if (service === 'Debt Review Sales Coach') {
       const dr = 'NCA s86 / Regulation 24 operational control';
-      addStep(service, 1, 'Consultant Handover', 'Receive consultant handover and lock selected service as Debt Review', { evidenceRequired: 'Consultant handover snapshot with client info, accounts, reduced amount and notes', outcome: 'Admin owns the file' });
-      addStep(service, 2, 'Intake Verification', 'Verify client profile, ID number, contact details, marital/joint status and spouse details', { evidenceRequired: 'Updated client profile', ncaMinimum: true });
-      addStep(service, 3, 'Required Client Documents', 'Confirm only required client docs: signed Form 16, ID copy, latest payslip and 3 months bank statements', { evidenceRequired: 'Signed Form 16, ID copy, latest payslip, 3 months bank statements', ncaMinimum: true, gate: 'Do not start statutory notices until complete' });
-      addStep(service, 4, 'Credit Agreement Review', 'Verify all included credit agreements from credit report and mark excluded, closed, legal or prescribed-candidate accounts', { evidenceRequired: 'Included-creditor schedule', ncaMinimum: true });
-      addStep(service, 5, 'Budget / Affordability', 'Verify nett income, living-expense budget, dependants, bank details and available amount before proposal', { evidenceRequired: 'Captured living budget and affordability summary', ncaMinimum: true });
-      addStep(service, 6, 'Form 16 Accepted', 'Record Form 16 received/signed date and open the legal debt-review application timer', { dueFrom: 'Signed Form 16', regulationRef: 'NCA s86 application control', evidenceRequired: 'Form 16 date and proof of receipt', ncaMinimum: true, gate: 'This is where the legal debt-review process starts' });
-      addStep(service, 7, 'Form 17.1', 'Send Form 17.1/application notice to every included credit provider and registered credit bureau', { dueBusinessDays: 5, dueFrom: 'Form 16/application received', regulationRef: dr, evidenceRequired: '17.1 copies and proof of dispatch per creditor/bureau', ncaMinimum: true });
-      addStep(service, 8, 'COB Requests', 'Request Certificates of Balance from every included creditor and create follow-up dates', { dueBusinessDays: 5, dueFrom: '17.1 dispatch', regulationRef: dr, evidenceRequired: 'COB request log and creditor communication proof', ncaMinimum: true });
-      addStep(service, 9, 'COB Capture', 'Capture COB balances, arrears, instalments, interest/rates and account status per creditor', { evidenceRequired: 'COB copy per creditor', ncaMinimum: true });
-      addStep(service, 10, 'COB Reconciliation', 'Compare COB values against parsed credit-report figures and resolve discrepancies', { evidenceRequired: 'Reconciled creditor schedule with notes', ncaMinimum: true });
-      addStep(service, 11, 'Assessment', 'Complete over-indebtedness assessment using income, living budget, bank statements, payslip and COBs', { dueBusinessDays: 30, dueFrom: 'Debt-review application date', regulationRef: 'NCA s86(6) assessment control', evidenceRequired: 'Assessment worksheet', ncaMinimum: true });
-      addStep(service, 12, 'Assessment', 'Check reckless-credit/legal-action indicators and flag accounts requiring legal/compliance review', { evidenceRequired: 'Reckless/legal risk notes', ncaMinimum: true });
-      addStep(service, 13, 'Form 17.2 Decision', 'Issue Form 17.2 outcome: rejected/not over-indebted or accepted/over-indebted/restructuring', { dueBusinessDays: 30, dueFrom: 'Debt-review application date', regulationRef: 'NCA s86 / Regulation 24 decision notification', evidenceRequired: 'Form 17.2 and proof of dispatch', ncaMinimum: true, gate: 'If rejected, stop Debt Review workflow and close or move to mediation' });
-      addStep(service, 14, 'Proposal', 'Prepare restructuring proposal using available amount and included creditor schedule', { evidenceRequired: 'Proposal calculation and creditor schedule', ncaMinimum: true });
-      addStep(service, 15, 'Creditor Negotiation', 'Send proposal to every included creditor and track accepted, rejected, counter-offer or no response', { evidenceRequired: 'Proposal dispatch proof and response register', ncaMinimum: true });
-      addStep(service, 16, 'Legal Pack', 'Prepare consent order, NCT or magistrates court pack based on responses and case route', { dueBusinessDays: 60, dueFrom: 'Debt-review application date', regulationRef: 'NCA s86(8), s87 and s86(10) risk control', evidenceRequired: 'Legal pack, case/reference number or submission proof', ncaMinimum: true });
-      addStep(service, 17, 'PDA Setup', 'Capture PDA name, reference, proposed distribution amount, debit day and first payment date', { evidenceRequired: 'PDA reference/payment schedule', ncaMinimum: true, ownerRole: 'Admin/PDA' });
-      addStep(service, 18, 'Active Debt Review', 'Move case into active monitoring only after proposal/order/payment setup is confirmed', { evidenceRequired: 'Active status note and first-payment plan', ownerRole: 'Admin/PDA' });
-      addStep(service, 19, 'Aftercare', 'Monitor monthly PDA payments, missed payments, disputes, balance updates and client changes', { evidenceRequired: 'Monthly aftercare/payment notes', ownerRole: 'Admin/PDA' });
-      addStep(service, 20, 'Variation', 'If affordability changes, capture new budget/payslip/bank statements and run variation/re-proposal path', { evidenceRequired: 'Variation pack or no-change note', ownerRole: 'Admin/PDA' });
-      addStep(service, 21, 'Paid-Up Tracking', 'Collect paid-up letters/settlement confirmations and update included accounts', { evidenceRequired: 'Paid-up letters and settlement confirmations', ownerRole: 'Admin/PDA' });
-      addStep(service, 22, 'Form 19 Clearance', 'Issue Form 19 only when clearance requirements are met and all eligible obligations are satisfied', { regulationRef: 'NCA s71 / NCR Form 19', evidenceRequired: 'Form 19, paid-up proof and debt counsellor approval', ncaMinimum: true, ownerRole: 'Admin/PDA', gate: 'This is the successful legal end of Debt Review' });
-      addStep(service, 23, 'Bureau Closure', 'Send clearance/update to bureaus/NCR records and verify debt-review flag removal/update', { evidenceRequired: 'Bureau update proof and final credit-report/status check', ncaMinimum: true, ownerRole: 'Admin/PDA' });
-      addStep(service, 24, 'Closed', 'Notify client, lock audit trail and close the admin file', { evidenceRequired: 'Client closure notice and final audit note', ownerRole: 'Admin/PDA', outcome: 'Debt Review file completed' });
+      addStep(service, 1, 'Sales Handover', 'Capture sale tracker fields: PDA, lead, closer, sale date, sale type, DC value, debit order amount and payment method', { evidenceRequired: 'Consultant handover snapshot with lead/closer, sale date, service type, DC value, debit day and payment method', outcome: 'Admin file opened' });
+      addStep(service, 2, 'Sales Handover', 'Confirm client status, application status and reason notes before admin starts processing', { evidenceRequired: 'Client status, application status and reasoning notes from sales tracker' });
+      addStep(service, 3, 'Client Docs', 'Confirm only required client documents: signed Form 16, ID copy, latest payslip and 3 months bank statements', { evidenceRequired: 'Signed Form 16, ID copy, latest payslip, 3 months bank statements', ncaMinimum: true, gate: 'Do not send 17.1 until signed Form 16 and minimum docs are confirmed' });
+      addStep(service, 4, 'Client Docs', 'Verify ID number, contact details, marital/joint status, single/joint application and spouse details where applicable', { evidenceRequired: 'Verified client profile and single/joint application status', ncaMinimum: true });
+      addStep(service, 5, 'Payment / DebiCheck', 'Confirm debit day, debit month/frequency, DebiCheck or payment method and first collection readiness', { evidenceRequired: 'DebiCheck/payment method record, debit day and collection month', ownerRole: 'Admin/PDA' });
+      addStep(service, 6, 'DHS / Flag', 'Capture DHS status, flag number and flagged date from tracker/DHS/credit-report evidence', { evidenceRequired: 'DHS status, flag number and flagged date', ncaMinimum: true });
+      addStep(service, 7, '17.1 / COB', 'Send Form 17.1 to all included credit providers and bureaus', { dueBusinessDays: 5, dueFrom: 'Signed Form 16/application received', regulationRef: dr, evidenceRequired: '17.1 sent date, proof of dispatch and 17.1 due date per creditor/bureau', ncaMinimum: true });
+      addStep(service, 8, '17.1 / COB', 'Request and follow up Certificates of Balance for every included creditor', { dueBusinessDays: 5, dueFrom: '17.1 dispatch', regulationRef: dr, evidenceRequired: 'COB requested/received date, COB due date and creditor follow-up notes', ncaMinimum: true });
+      addStep(service, 9, '17.1 / COB', 'Capture and reconcile COB balances, arrears, instalments and account statuses against the credit report', { evidenceRequired: 'Reconciled COB schedule with discrepancy notes', ncaMinimum: true });
+      addStep(service, 10, 'Assessment / 17.2', 'Complete affordability and over-indebtedness assessment using income, bank statements, payslip, budget and COBs', { dueBusinessDays: 30, dueFrom: 'Application date', regulationRef: 'NCA s86(6) assessment control', evidenceRequired: 'Assessment worksheet and budget affordability summary', ncaMinimum: true });
+      addStep(service, 11, 'Assessment / 17.2', 'Issue/capture Form 17.2 outcome and date; stop Debt Review if rejected/not over-indebted', { dueBusinessDays: 30, dueFrom: 'Application date', regulationRef: 'NCA s86 / Regulation 24 decision notification', evidenceRequired: '17.2 sent/accepted/rejected date and proof of dispatch', ncaMinimum: true, gate: 'Rejected matters must close or move to mediation/removal only if applicable' });
+      addStep(service, 12, 'Proposal', 'Send client calculation and capture date sent before finalising the proposal', { evidenceRequired: 'Client calculation sent flag/date and calculation copy' });
+      addStep(service, 13, 'Proposal', 'Prepare and send provisional proposal to included creditors', { evidenceRequired: 'Proposal sent date, proposal due date and dispatch proof', ncaMinimum: true });
+      addStep(service, 14, 'Acceptances / Rework', 'Track acceptances, outstanding acceptances, counters and acceptance due dates per creditor', { evidenceRequired: 'Acceptance register, due dates and creditor responses', ncaMinimum: true });
+      addStep(service, 15, 'Acceptances / Rework', 'Manage rework items and capture rework date, reason and updated proposal values', { evidenceRequired: 'Rework note/date and updated proposal pack' });
+      addStep(service, 16, 'Final Proposal / Legal', 'Finalise proposal and capture final proposal date and due date', { evidenceRequired: 'Final proposal copy/date and due date', ncaMinimum: true });
+      addStep(service, 17, 'Final Proposal / Legal', 'Send to legal/magistrate/NCT/court route where required and capture magistrate/court order status', { dueBusinessDays: 60, dueFrom: 'Application date', regulationRef: 'NCA s86(8), s87 and s86(10) risk control', evidenceRequired: 'Legal pack, magistrate/case number, court order or submission proof', ncaMinimum: true });
+      addStep(service, 18, 'PDA / Collections', 'Capture PDA name/reference, collection amount, first payment date and active payment status', { evidenceRequired: 'PDA reference/payment schedule/collection status', ncaMinimum: true, ownerRole: 'Admin/PDA' });
+      addStep(service, 19, 'PDA / Collections', 'Track collections, failed payments, reasons for no payment, restrike date, cash deposits and follow-up dates', { evidenceRequired: 'Collections notes, failed-payment reason, restrike/cash deposit/follow-up/solved dates', ownerRole: 'Admin/PDA' });
+      addStep(service, 20, 'PDA / Collections', 'Monitor monthly M1/M2 payment status, missed payments, disputes and payment confirmations', { evidenceRequired: 'Monthly payment notes and proof of payment/distribution', ownerRole: 'Admin/PDA' });
+      addStep(service, 21, 'Paid-Up / Clearance', 'Collect paid-up letters and settlement confirmations when accounts settle', { evidenceRequired: 'Paid-up letters and settlement confirmations', ownerRole: 'Admin/PDA' });
+      addStep(service, 22, 'Paid-Up / Clearance', 'Issue Form 19 only when legal clearance requirements are met', { regulationRef: 'NCA s71 / NCR Form 19', evidenceRequired: 'Form 19, paid-up proof and debt counsellor approval', ncaMinimum: true, ownerRole: 'Admin/PDA', gate: 'Successful legal end of Debt Review' });
+      addStep(service, 23, 'Bureau Closure', 'Send clearance/update to bureaus and verify debt-review flag removal/update', { evidenceRequired: 'Bureau update proof and final credit-report/status check', ncaMinimum: true, ownerRole: 'Admin/PDA' });
+      addStep(service, 24, 'Closed', 'Notify client, lock audit trail and close admin file', { evidenceRequired: 'Client closure notice and final audit note', ownerRole: 'Admin/PDA', outcome: 'Debt Review file completed' });
     }
     if (service === 'Debt Review Removal') {
-      addStep(service, 1, 'Removal Intake', 'Receive consultant handover and lock selected service as Debt Review Removal', { evidenceRequired: 'Consultant handover snapshot' });
-      addStep(service, 2, 'Required Client Documents', 'Confirm only required client docs: ID copy, 3 months bank statements, signed Form 17.W/17.3, latest payslip and POA', { evidenceRequired: 'ID, 3 months bank statements, signed 17.W/17.3, latest payslip, POA', ncaMinimum: true });
-      addStep(service, 3, 'Status Verification', 'Verify actual debt-review status from credit report/NCR/bureau/previous debt counsellor information', { evidenceRequired: 'Debt-review status evidence', ncaMinimum: true });
-      addStep(service, 4, 'Route Decision', 'Classify route: pre-17.2, post-17.2, court/NCT order, paid-up/clearance, incorrect bureau flag or legal review', { evidenceRequired: 'Removal route decision note', ncaMinimum: true, gate: 'Do not promise removal until the legal route is known' });
-      addStep(service, 5, 'Fee / Mandate', 'Confirm R7,000 DRR service fee split and NuPay DebiCheck collection status', { evidenceRequired: 'Accepted NuPay DebiCheck / fee record', ncaMinimum: true });
-      addStep(service, 6, 'Removal Pack', 'Prepare removal/upliftment pack according to the verified route', { evidenceRequired: 'Removal pack and supporting documents', ncaMinimum: true });
-      addStep(service, 7, 'Submission', 'Submit bureau/NCR/court/NCT/previous-DC update action and store proof', { evidenceRequired: 'Submission proof', ncaMinimum: true });
-      addStep(service, 8, 'Confirmation', 'Track confirmation and verify credit-report/bureau update', { evidenceRequired: 'Confirmation letter/status update/final report', ncaMinimum: true });
-      addStep(service, 9, 'Post Removal', 'If balances remain, continue only the Debt Mediation workflow for those accounts', { evidenceRequired: 'Remaining-balance and mediation note' });
-      addStep(service, 10, 'Closed', 'Notify client and close the DRR admin file', { evidenceRequired: 'Client closure notice' });
+      addStep(service, 1, 'Removal Handover', 'Capture removal tracker fields: sale date, code/reference, consultant, debit amount/date/month/duration and application status', { evidenceRequired: 'Removal handover snapshot with fee, debit duration, app status and notes' });
+      addStep(service, 2, 'Removal Docs', 'Confirm only required docs: ID copy, 3 months bank statements, signed 17.W/17.3, latest payslip and POA', { evidenceRequired: 'ID, 3 months bank statements, signed 17.W/17.3, latest payslip, POA', ncaMinimum: true });
+      addStep(service, 3, 'Removal Docs', 'Confirm signature received and client authority before removal work starts', { evidenceRequired: 'Signature/POA status', ncaMinimum: true });
+      addStep(service, 4, 'Removal DebiCheck', 'Send/confirm separate NuPay DebiCheck for the DRR removal fee only', { evidenceRequired: 'Removal DebiCheck mandate, accepted status, debit date/month and M1-M6 split', ncaMinimum: true });
+      addStep(service, 5, 'DHS / Transfer', 'Verify DHS/debt-review status, transfer status and previous debt counsellor/17.7 status where applicable', { evidenceRequired: 'DHS status, transfer status, transfer accepted/declined and previous DC notes', ncaMinimum: true });
+      addStep(service, 6, '17.W / 17.3', 'Confirm 17.W/17.3 route and received date/status', { evidenceRequired: '17.W/17.3 document and route decision', ncaMinimum: true, gate: 'Do not promise removal until route is verified' });
+      addStep(service, 7, 'Removal Pack', 'Prepare bureau/NCR/previous-DC/court/NCT removal pack based on verified route', { evidenceRequired: 'Removal pack and supporting documents', ncaMinimum: true });
+      addStep(service, 8, 'Court / Legal', 'Capture court date, case number, court order, PS Legal/Freemee allocation where applicable', { evidenceRequired: 'Case number, court date/order or legal allocation note' });
+      addStep(service, 9, 'Paid-Up / Clearance', 'Track paid-up letters, cash deposits, transfer completed and clearance certificate where needed', { evidenceRequired: 'Paid-up letters, cash deposit proof, transfer completion or clearance certificate' });
+      addStep(service, 10, 'Confirmation', 'Verify final bureau/credit-report update and confirm flag removed or corrected', { evidenceRequired: 'Final bureau/report status proof', ncaMinimum: true });
+      addStep(service, 11, 'Closed', 'Notify client and close the DRR file', { evidenceRequired: 'Client closure notice and audit note' });
     }
     if (service === 'Debt Mediation') {
-      addStep(service, 1, 'Mediation Intake', 'Receive consultant handover and lock selected service as Debt Mediation', { evidenceRequired: 'Consultant handover snapshot' });
-      addStep(service, 2, 'Required Client Documents', 'Confirm only required client docs: ID copy, 3 months bank statements, latest payslip and POA', { evidenceRequired: 'ID, 3 months bank statements, latest payslip, POA', ncaMinimum: true });
-      addStep(service, 3, 'Authority / Limits', 'Confirm client authority and make clear that mediation is not statutory Debt Review protection', { evidenceRequired: 'POA/authority and disclosure note', ncaMinimum: true });
-      addStep(service, 4, 'Budget / Affordability', 'Verify income, living budget, available amount and bank details', { evidenceRequired: 'Captured affordability summary', ncaMinimum: true });
-      addStep(service, 5, 'Creditor Schedule', 'Confirm included creditors and remove excluded, closed or non-negotiated accounts', { evidenceRequired: 'Mediation creditor schedule', ncaMinimum: true });
-      addStep(service, 6, 'Proposal', 'Prepare reduced-payment proposal per creditor using balance, arrears, original instalment and reduced amount', { evidenceRequired: 'Proposal pack', ncaMinimum: true });
-      addStep(service, 7, 'Creditor Dispatch', 'Send proposal to every included creditor and store proof', { evidenceRequired: 'Email/proof of dispatch', ncaMinimum: true });
-      addStep(service, 8, 'Negotiation', 'Track acceptance, rejection, counter-offer and escalation per creditor', { evidenceRequired: 'Creditor response register', ncaMinimum: true });
-      addStep(service, 9, 'NuPay / Collection', 'Send or confirm NuPay DebiCheck for the ongoing reduced payment only', { evidenceRequired: 'Accepted mandate and payment schedule', ncaMinimum: true, ownerRole: 'Admin/PDA' });
-      addStep(service, 10, 'Monitoring', 'Monitor first payment, creditor responses and client/creditor status notes', { evidenceRequired: 'Payment and status notes', ownerRole: 'Admin/PDA' });
-      addStep(service, 11, 'Closed / Active', 'Move to active monitoring or close when arrangement is completed/cancelled', { evidenceRequired: 'Closure or active-monitoring note', ownerRole: 'Admin/PDA' });
+      addStep(service, 1, 'Mediation Handover', 'Capture sales tracker fields: lead, closer, sale date, sale type, DC value/reduced payment and payment method', { evidenceRequired: 'Mediation handover snapshot with consultant, sale date and reduced payment' });
+      addStep(service, 2, 'Mediation Docs', 'Confirm only required docs: ID copy, 3 months bank statements, latest payslip and POA', { evidenceRequired: 'ID, 3 months bank statements, latest payslip, POA', ncaMinimum: true });
+      addStep(service, 3, 'Budget / Affordability', 'Verify budget, income and available amount for mediation proposal', { evidenceRequired: 'Living budget and affordability summary', ncaMinimum: true });
+      addStep(service, 4, 'Mediation DebiCheck', 'Send/confirm separate NuPay DebiCheck for the ongoing mediation/reduced payment only', { evidenceRequired: 'Mediation DebiCheck mandate, start date and amount', ownerRole: 'Admin/PDA' });
+      addStep(service, 5, 'Creditor Schedule', 'Confirm included creditors and remove excluded/closed/non-negotiated accounts', { evidenceRequired: 'Mediation creditor schedule', ncaMinimum: true });
+      addStep(service, 6, 'Client Calc / Proposal', 'Send client calculation and capture date sent', { evidenceRequired: 'Client calc sent flag/date and calculation copy' });
+      addStep(service, 7, 'Proposal', 'Prepare and send creditor proposals', { evidenceRequired: 'Proposal sent date, due date and dispatch proof', ncaMinimum: true });
+      addStep(service, 8, 'Acceptances / Counter', 'Track acceptances, outstanding acceptances, counters and follow-up notes', { evidenceRequired: 'Creditor acceptance/counter/outstanding register', ncaMinimum: true });
+      addStep(service, 9, 'Rework', 'Capture rework items, more-money requests or revised reduced amount', { evidenceRequired: 'Rework/more-money note and revised proposal' });
+      addStep(service, 10, 'Collections', 'Track first payment, failed DebiCheck, collections feedback, restrike and client promise-to-pay', { evidenceRequired: 'Collection notes, failed payment reasons and solved/follow-up dates', ownerRole: 'Admin/PDA' });
+      addStep(service, 11, 'Active / Closed', 'Move to active monitoring or close when arrangement is completed/cancelled', { evidenceRequired: 'Active-monitoring or closure note', ownerRole: 'Admin/PDA' });
     }
     if (service === 'Needs Manual Review') {
-      addStep(service, 1, 'Manual Review', 'Review parser output and select the correct service route before sending statutory documents or sales promises', { evidenceRequired: 'Manual-review note', ncaMinimum: true });
-      addStep(service, 2, 'Manual Review', 'Confirm required documents and compliance risk before admin processing', { evidenceRequired: 'Admin decision note', ncaMinimum: true });
+      addStep(service, 1, 'Manual Review', 'Review parser output and select the correct service route before admin processing', { evidenceRequired: 'Manual-review note', ncaMinimum: true });
+      addStep(service, 2, 'Manual Review', 'Confirm required documents, payment and compliance risk before processing', { evidenceRequired: 'Admin decision note', ncaMinimum: true });
     }
   });
   return rows;
@@ -635,6 +713,27 @@ function toNumber(value: string | number | boolean | undefined): number {
   if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
   const parsed = Number(String(value ?? '').replace(/[^0-9.-]/g, ''));
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function heatMeta(value: number | string | undefined) {
+  const total = toNumber(value);
+  const heatBlocks = Math.floor(total / 5000);
+  const progressToNextHeat = Math.min(100, Math.round(((total % 5000) / 5000) * 100));
+  const nextHeatGap = Math.max(0, 5000 - (total % 5000 || 0));
+  const heatLabel = heatBlocks >= 10 ? 'Inferno' : heatBlocks >= 6 ? 'Blazing' : heatBlocks >= 3 ? 'Heating Up' : heatBlocks >= 1 ? 'Warm' : 'Cold Start';
+  const heatEmoji = heatBlocks >= 10 ? '🔥🔥🔥' : heatBlocks >= 6 ? '🔥🔥' : heatBlocks >= 3 ? '🔥' : heatBlocks >= 1 ? '♨️' : '🌡️';
+  return { heatBlocks, progressToNextHeat, nextHeatGap, heatLabel, heatEmoji };
+}
+
+function HeatMeter({ value, label }: { value: number; label?: string }) {
+  const heat = heatMeta(value);
+  return (
+    <div className="heat-meter">
+      <div className="heat-top"><span>{heat.heatEmoji} {label || heat.heatLabel}</span><strong>{heat.heatBlocks} heat block(s)</strong></div>
+      <div className="thermometer-track"><span style={{ width: `${heat.progressToNextHeat}%` }} /></div>
+      <small>{currency(value)} · {currency(heat.nextHeatGap)} to next R5,000 heat boost</small>
+    </div>
+  );
 }
 
 function livingExpenseTotal(budget: LivingBudget | undefined): number {
@@ -841,13 +940,46 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
+const adminTrackerLanes = [
+  {
+    title: 'Sales / Handover',
+    phases: ['Sales Handover', 'Removal Handover', 'Mediation Handover', 'Consultant Handover'],
+    fields: 'PDA, lead, closer, sale date, sale type, DC value, debit amount, client status'
+  },
+  {
+    title: 'Docs + Signature',
+    phases: ['Client Docs', 'Removal Docs', 'Mediation Docs', 'Required Client Documents'],
+    fields: 'ID received, Form 16/17.W/17.3/POA, payslip, bank statements, signature'
+  },
+  {
+    title: 'DebiCheck / PDA / Collections',
+    phases: ['Payment / DebiCheck', 'Removal DebiCheck', 'Mediation DebiCheck', 'PDA / Collections', 'Collections'],
+    fields: 'Debit day, debit month, DebiCheck status, M1/M2, failed payments, restrike, cash deposits'
+  },
+  {
+    title: 'DHS / 17.1 / COB / 17.2',
+    phases: ['DHS / Flag', 'DHS / Transfer', '17.1 / COB', 'Assessment / 17.2', '17.W / 17.3'],
+    fields: 'DHS status, flag number/date, 17.1 sent/due, COB received/due, 17.2 date/outcome'
+  },
+  {
+    title: 'Proposal / Acceptances',
+    phases: ['Proposal', 'Client Calc / Proposal', 'Acceptances / Rework', 'Acceptances / Counter', 'Rework'],
+    fields: 'Client calc sent, proposal sent/due, acceptances received/due, counters, rework date'
+  },
+  {
+    title: 'Legal / Court / Closure',
+    phases: ['Final Proposal / Legal', 'Court / Legal', 'Removal Pack', 'Paid-Up / Clearance', 'Bureau Closure', 'Confirmation', 'Closed', 'Active / Closed'],
+    fields: 'Final proposal, send to legal, magistrate, court date/order, paid-up letters, clearance, bureau update'
+  }
+];
+
 export default function App() {
-  const [apiBase, setApiBase] = useState(() => localStorage.getItem('fintastic_sales_api') || 'http://localhost:5000');
+  const [apiBase, setApiBase] = useState(defaultApiBase);
   const [loggedIn, setLoggedIn] = useState(() => localStorage.getItem('fintastic_logged_in') === '1');
   const [tenants, setTenants] = useState<Tenant[]>([]);
-  const [tenantId, setTenantId] = useState(() => localStorage.getItem('fintastic_tenant_id') || 'liberty-credit-specialists');
+  const [tenantId, setTenantId] = useState(defaultTenantId);
   const [users, setUsers] = useState<TenantUser[]>([]);
-  const [userId, setUserId] = useState(() => localStorage.getItem('fintastic_user_id') || 'lib-agent-1');
+  const [userId, setUserId] = useState(defaultUserId);
   const [clients, setClients] = useState<Client[]>([]);
   const [client, setClient] = useState<Client>(() => newLocalClient(tenantId, userId));
   const [searchText, setSearchText] = useState('');
@@ -869,6 +1001,7 @@ export default function App() {
   const [handoverNotes, setHandoverNotes] = useState('');
   const [docUploadName, setDocUploadName] = useState('ID copy');
   const [consultantLeaderboard, setConsultantLeaderboard] = useState<ConsultantMetric[]>([]);
+  const [teamLeaderboard, setTeamLeaderboard] = useState<TeamMetric[]>([]);
   const [dashboardSummary, setDashboardSummary] = useState<ConsultantDashboardSummary>({
     tenantClients: 0,
     uploadedReports: 0,
@@ -878,7 +1011,14 @@ export default function App() {
     removalFees: 0,
     documentsReceived: 0,
     clientsSubmitted: 0,
-    consultants: 0
+    requiredDocuments: 0,
+    consultants: 0,
+    teams: 0,
+    heatBlocks: 0,
+    heatLabel: 'Cold Start',
+    heatEmoji: '🌡️',
+    progressToNextHeat: 0,
+    nextHeatGap: 5000
   });
   const [commissionSnapshot, setCommissionSnapshot] = useState<CommissionSnapshot | null>(null);
   const [commissionHistory, setCommissionHistory] = useState<CommissionSnapshot[]>([]);
@@ -905,6 +1045,14 @@ export default function App() {
   const hasDrrFeeCollection = splitDebiChecks.removal.applicable;
   const hasMediationCollection = splitDebiChecks.mediation.applicable;
 
+  const trackerLaneSummary = useMemo(() => adminTrackerLanes.map((lane) => {
+    const tasks = (client.adminWorkflow?.tasks || []).filter((task) => lane.phases.includes(task.phase));
+    const done = tasks.filter((task) => ['Done', 'Completed', 'Submitted'].includes(task.status)).length;
+    const blocked = tasks.filter((task) => ['Blocked', 'Waiting Client', 'Waiting Creditor'].includes(task.status)).length;
+    const active = tasks.length - done;
+    return { ...lane, tasks, done, blocked, active };
+  }), [client.adminWorkflow?.tasks]);
+
   const quickTabs: { key: ViewKey; label: string; helper: string }[] = [
     { key: 'profile', label: 'Client Info', helper: 'Details + joint' },
     { key: 'budget', label: 'Budget', helper: 'Living expenses' },
@@ -922,9 +1070,18 @@ export default function App() {
     try {
       const response = await fetch(`${apiBase}/api/tenants`);
       const data = await response.json();
-      if (data.success) setTenants(data.tenants || []);
+      if (data.success) {
+        const loadedTenants = data.tenants || [];
+        setTenants(loadedTenants);
+        const selectedStillExists = loadedTenants.some((tenant: Tenant) => tenant.id === tenantId);
+        const khuselaTenant = loadedTenants.find((tenant: Tenant) => tenant.id === 'khusela-debt-management');
+        if (!selectedStillExists && (khuselaTenant || loadedTenants[0])) {
+          setTenantId((khuselaTenant || loadedTenants[0]).id);
+        }
+      }
     } catch {
       setTenants([
+        { id: 'khusela-debt-management', name: 'Khusela Debt Management', tradingName: 'Khusela Debt Management', fullName: 'Rosande Ruth Roberts', ncr: 'NCRDC3999', phone: '076 949 0966', email: 'admin@kdebt.co.za', finalRegistrationDate: '2022-05-23', physicalAddress: '74 Maynard Road, 3rd Floor, CHB Building, Wynberg', postalAddress: '25 Batts Road, Wynberg, 7800', town: 'Cape Town', userCount: 16, clientCount: 0 },
         { id: 'liberty-credit-specialists', name: 'Liberty Credit Specialists', ncr: 'NCRDC-1829', userCount: 3, clientCount: clients.length },
         { id: 'apex-debt-solutions', name: 'Apex Debt Solutions', ncr: 'NCRDC-2491', userCount: 2, clientCount: 0 }
       ]);
@@ -972,6 +1129,7 @@ export default function App() {
       const data = await response.json();
       if (!response.ok || !data.success) throw new Error(data.error || 'Could not load dashboard metrics');
       setConsultantLeaderboard(data.leaderboard || []);
+      setTeamLeaderboard(data.teamLeaderboard || []);
       setDashboardSummary(data.summary || dashboardSummary);
     } catch (error) {
       console.warn(error);
@@ -981,10 +1139,27 @@ export default function App() {
         const reduced = owned.reduce((total, c) => total + toNumber((c.coach || evaluateCoach(c, c.accounts || [])).totals.reducedInstalment), 0);
         const removal = owned.reduce((total, c) => total + ((c.serviceTypes || [c.serviceType]).includes('Debt Review Removal') ? drrFee : 0), 0);
         const docs = owned.reduce((total, c) => total + ((c.documents?.items || []).filter((d) => d.status === 'Uploaded').length), 0);
-        return { rank: index + 1, userId: u.id, name: u.name, role: u.role, email: u.email, leadsGenerated: uploaded, uploadedReports: uploaded, activeClients: owned.length, clientsSubmitted: owned.filter((c) => c.status === 'Submitted to Admin').length, reducedInstallments: reduced, removalFees: removal, dcValue: reduced + removal, documentsReceived: docs, requiredDocuments: owned.reduce((total, c) => total + (c.documents?.items || []).length, 0), documentCompletionRate: 0, performanceScore: 0 } as ConsultantMetric;
+        const rowValue = reduced + removal;
+        return { rank: index + 1, userId: u.id, name: u.name, role: u.role, team: u.team || 'Main Floor', email: u.email, leadsGenerated: uploaded, uploadedReports: uploaded, activeClients: owned.length, clientsSubmitted: owned.filter((c) => c.status === 'Submitted to Admin').length, reducedInstallments: reduced, removalFees: removal, dcValue: rowValue, documentsReceived: docs, requiredDocuments: owned.reduce((total, c) => total + (c.documents?.items || []).length, 0), documentCompletionRate: 0, performanceScore: 0, ...heatMeta(rowValue) } as ConsultantMetric;
       });
+      const fallbackTeams = Object.values(fallbackRows.reduce((acc, row) => {
+        const team = row.team || 'Main Floor';
+        acc[team] = acc[team] || { rank: 0, team, consultants: 0, leadsGenerated: 0, uploadedReports: 0, clientsSubmitted: 0, reducedInstallments: 0, removalFees: 0, dcValue: 0, documentsReceived: 0, requiredDocuments: 0, documentCompletionRate: 0, performanceScore: 0 } as TeamMetric;
+        acc[team].consultants += 1;
+        acc[team].leadsGenerated += row.leadsGenerated;
+        acc[team].uploadedReports += row.uploadedReports;
+        acc[team].clientsSubmitted += row.clientsSubmitted;
+        acc[team].reducedInstallments += row.reducedInstallments;
+        acc[team].removalFees += row.removalFees;
+        acc[team].dcValue += row.dcValue;
+        acc[team].documentsReceived += row.documentsReceived;
+        acc[team].requiredDocuments += row.requiredDocuments;
+        return acc;
+      }, {} as Record<string, TeamMetric>)).sort((a, b) => b.dcValue - a.dcValue).map((team, index) => ({ ...team, rank: index + 1, ...heatMeta(team.dcValue) }));
+      const floorDcValue = fallbackRows.reduce((t, r) => t + r.dcValue, 0);
       setConsultantLeaderboard(fallbackRows);
-      setDashboardSummary({ tenantClients: clients.length, uploadedReports: clients.length, leadsGenerated: clients.length, dcValue: fallbackRows.reduce((t, r) => t + r.dcValue, 0), reducedInstallments: fallbackRows.reduce((t, r) => t + r.reducedInstallments, 0), removalFees: fallbackRows.reduce((t, r) => t + r.removalFees, 0), documentsReceived: fallbackRows.reduce((t, r) => t + r.documentsReceived, 0), clientsSubmitted: fallbackRows.reduce((t, r) => t + r.clientsSubmitted, 0), consultants: fallbackRows.length });
+      setTeamLeaderboard(fallbackTeams);
+      setDashboardSummary({ tenantClients: clients.length, uploadedReports: clients.length, leadsGenerated: clients.length, dcValue: floorDcValue, reducedInstallments: fallbackRows.reduce((t, r) => t + r.reducedInstallments, 0), removalFees: fallbackRows.reduce((t, r) => t + r.removalFees, 0), documentsReceived: fallbackRows.reduce((t, r) => t + r.documentsReceived, 0), clientsSubmitted: fallbackRows.reduce((t, r) => t + r.clientsSubmitted, 0), requiredDocuments: fallbackRows.reduce((t, r) => t + r.requiredDocuments, 0), consultants: fallbackRows.length, teams: fallbackTeams.length, ...heatMeta(floorDcValue) });
     }
   };
 
@@ -1248,8 +1423,8 @@ export default function App() {
       });
       const data = await response.json();
       if (!response.ok || !data.success) throw new Error(data.error || 'Could not create links');
-      setClient((current) => ({ ...current, id: saved.id, portalLinks: { signatureLink: data.signatureLink, uploadLink: data.uploadLink, createdAt: data.createdAt } }));
-      setSaveMessage(`Portal links saved at ${new Date().toLocaleTimeString()}`);
+      setClient((current) => ({ ...current, id: saved.id, portalLinks: { clientPortalLink: data.clientPortalLink || data.uploadLink || data.signatureLink, signatureLink: data.signatureLink, uploadLink: data.uploadLink, createdAt: data.createdAt } }));
+      setSaveMessage(`Client portal link saved at ${new Date().toLocaleTimeString()}`);
     } catch (error) {
       alert(error instanceof Error ? error.message : 'Could not create portal links');
     }
@@ -1286,7 +1461,7 @@ export default function App() {
   const requestDocuments = async () => {
     try {
       await postClientAction('/documents/request');
-      alert('Document upload link created and relevant document request marked as sent.');
+      alert('Combined documents + signature client portal link created.');
     } catch (error) {
       alert(error instanceof Error ? error.message : 'Could not request documents');
     }
@@ -1519,6 +1694,7 @@ export default function App() {
       <div className="login-shell">
         <div className="login-card">
           <div className="brand-block login-brand"><div className="brand-mark">FT</div><div><strong>Fin-Tastic</strong><span>Sales Coach</span></div></div>
+          {tenantLogoSrc(currentTenant) ? <div className="login-tenant-logo-wrap"><img src={tenantLogoSrc(currentTenant) || ''} alt={`${currentTenant?.name || 'Tenant'} logo`} className="login-tenant-logo" /></div> : null}
           <h1>Sign in to your tenant workspace</h1>
           <p>Choose the tenant and user once. The live workspace will not randomly switch roles or tenants.</p>
           <Field label="Backend API Base"><input value={apiBase} onChange={(event) => setApiBase(event.target.value)} /></Field>
@@ -1542,6 +1718,7 @@ export default function App() {
           </div>
         </div>
         <div className="tenant-card dark">
+          {tenantLogoSrc(currentTenant) ? <img src={tenantLogoSrc(currentTenant) || ''} alt={`${currentTenant?.name || 'Tenant'} logo`} className="tenant-logo" /> : null}
           <small>Active tenant</small>
           <strong>{currentTenant?.name || tenantId}</strong>
           <span>{currentTenant?.ncr || ''}</span>
@@ -1569,6 +1746,7 @@ export default function App() {
             <p>{activeView === 'dashboard' ? 'Healthy competition dashboard: performance only, no client details.' : 'Every user sees only the clients inside their own tenant database.'}</p>
           </div>
           <div className="topbar-actions session-chip">
+            {tenantLogoSrc(currentTenant) ? <img src={tenantLogoSrc(currentTenant) || ''} alt={`${currentTenant?.name || 'Tenant'} logo`} className="topbar-tenant-logo" /> : null}
             <span><strong>{currentTenant?.name || tenantId}</strong></span>
             <span>{currentUser ? `${currentUser.name} · ${currentUser.role}` : userId}</span>
             <button className="secondary" onClick={() => { localStorage.removeItem('fintastic_logged_in'); setLoggedIn(false); setActiveView('dashboard'); }}>Switch / Logout</button>
@@ -1616,11 +1794,40 @@ export default function App() {
               </div>
             </div>
 
+            <div className="floor-heat-card panel-card">
+              <div>
+                <Badge tone="warn">Floor heat target</Badge>
+                <h2>{dashboardSummary.heatEmoji || '🌡️'} {dashboardSummary.heatLabel || 'Cold Start'} Floor</h2>
+                <p>Every R5,000 in combined DC value / DRR fee adds another heat block to the floor scoreboard.</p>
+              </div>
+              <HeatMeter value={dashboardSummary.dcValue || 0} label="Entire floor heat" />
+            </div>
+
             <div className="stats-grid dashboard-kpis competition-kpis">
-              <StatCard label="Leads Generated" value={String(dashboardSummary.leadsGenerated || 0)} sub="Uploaded credit reports" />
-              <StatCard label="DC Value" value={currency(dashboardSummary.dcValue || 0)} sub="Reduced payments + DRR fees" />
-              <StatCard label="Documents Received" value={String(dashboardSummary.documentsReceived || 0)} sub="Required docs uploaded" />
-              <StatCard label="Admin Handovers" value={String(dashboardSummary.clientsSubmitted || 0)} sub="Submitted to workflow" />
+              <StatCard label="Floor Leads" value={String(dashboardSummary.leadsGenerated || 0)} sub="Uploaded credit reports" />
+              <StatCard label="Floor DC Value" value={currency(dashboardSummary.dcValue || 0)} sub="Reduced payments + DRR fees" />
+              <StatCard label="Teams" value={String(dashboardSummary.teams || teamLeaderboard.length || 0)} sub="Healthy team competition" />
+              <StatCard label="Docs Received" value={String(dashboardSummary.documentsReceived || 0)} sub="Required docs uploaded" />
+            </div>
+
+            <div className="panel-card team-heat-board">
+              <div className="section-heading compact-heading no-pad-heading">
+                <div>
+                  <h2>Team Heat Board</h2>
+                  <p>Team totals keep the whole floor pushing together while each consultant still has an individual rank.</p>
+                </div>
+                <Badge tone="blue">R5,000 = +1 heat</Badge>
+              </div>
+              <div className="team-heat-grid">
+                {teamLeaderboard.map((team) => (
+                  <div key={team.team} className="team-heat-card">
+                    <div className="team-heat-title"><span>#{team.rank}</span><strong>{team.team}</strong><em>{team.consultants} consultant(s)</em></div>
+                    <HeatMeter value={team.dcValue || 0} label={team.heatLabel || 'Team heat'} />
+                    <div className="team-mini-stats"><span>{team.leadsGenerated} leads</span><span>{currency(team.dcValue)} value</span><span>{team.documentsReceived} docs</span></div>
+                  </div>
+                ))}
+                {!teamLeaderboard.length ? <div className="empty-state">No team activity yet.</div> : null}
+              </div>
             </div>
 
             <div className="leader-podium competition-podium hype-podium">
@@ -1655,12 +1862,14 @@ export default function App() {
                     <tr>
                       <th>Rank</th>
                       <th>Consultant</th>
+                      <th>Team</th>
                       <th>Leads</th>
                       <th>Reduced Payments</th>
                       <th>DRR Fees</th>
                       <th>DC Value</th>
                       <th>Docs Received</th>
                       <th>Handovers</th>
+                      <th>Heat</th>
                       <th>Score</th>
                     </tr>
                   </thead>
@@ -1669,16 +1878,18 @@ export default function App() {
                       <tr key={row.userId}>
                         <td><span className="rank-pill">#{row.rank}</span></td>
                         <td><strong>{row.name}</strong><small>{row.role}</small></td>
+                        <td><span className="team-pill">{row.team || 'Main Floor'}</span></td>
                         <td>{row.leadsGenerated}</td>
                         <td>{currency(row.reducedInstallments)}</td>
                         <td>{currency(row.removalFees)}</td>
                         <td><strong>{currency(row.dcValue)}</strong></td>
                         <td>{row.documentsReceived}{row.requiredDocuments ? <small> / {row.requiredDocuments}</small> : null}</td>
                         <td>{row.clientsSubmitted}</td>
+                        <td><div className="mini-heat"><span>{row.heatEmoji || '🌡️'}</span><strong>{row.heatBlocks || 0}</strong></div></td>
                         <td><strong>{row.performanceScore}</strong></td>
                       </tr>
                     ))}
-                    {!consultantLeaderboard.length ? <tr><td colSpan={9}>No consultant activity yet. Upload reports to start ranking consultants.</td></tr> : null}
+                    {!consultantLeaderboard.length ? <tr><td colSpan={11}>No consultant activity yet. Upload reports to start ranking consultants.</td></tr> : null}
                   </tbody>
                 </table>
               </div>
@@ -2049,10 +2260,10 @@ export default function App() {
               {((removalDebiCheck.history?.length || 0) + (mediationDebiCheck.history?.length || 0)) > 0 ? <div className="mandate-history-grid"><div><h4>Removal history</h4><ul className="clean-list mandate-history">{(removalDebiCheck.history || []).slice(-4).map((event, index) => <li key={`removal-${event.at}-${index}`}>{event.at ? new Date(event.at).toLocaleString() : ''} · {event.action}{event.amount ? ` · ${currency(event.amount)}` : ''}{event.startDate ? ` · starts ${event.startDate}` : ''}</li>)}</ul></div><div><h4>Mediation history</h4><ul className="clean-list mandate-history">{(mediationDebiCheck.history || []).slice(-4).map((event, index) => <li key={`mediation-${event.at}-${index}`}>{event.at ? new Date(event.at).toLocaleString() : ''} · {event.action}{event.amount ? ` · ${currency(event.amount)}` : ''}{event.startDate ? ` · starts ${event.startDate}` : ''}</li>)}</ul></div></div> : <p className="muted">No separate DebiCheck history yet.</p>}
             </div>
             <div className="panel-card">
-              <div className="section-heading"><div><h2>Client portal links</h2><p>Links include tenant and client ID. Only the required document set for the selected service is requested.</p></div><button className="secondary" onClick={createPortalLinks}>Create Legacy Links</button></div>
+              <div className="section-heading"><div><h2>Client portal link</h2><p>One simple link for required document uploads and drawn electronic signature.</p></div><button className="secondary" onClick={createPortalLinks}>Create Client Portal Link</button></div>
               <div className="link-grid">
-                <div><span>Signature Link</span>{client.signature?.link || client.portalLinks?.signatureLink ? <a href={client.signature?.link || client.portalLinks?.signatureLink}>{client.signature?.link || client.portalLinks?.signatureLink}</a> : <small>Not created yet</small>}</div>
-                <div><span>Upload Documents Link</span>{client.documents?.uploadLink || client.portalLinks?.uploadLink ? <a href={client.documents?.uploadLink || client.portalLinks?.uploadLink}>{client.documents?.uploadLink || client.portalLinks?.uploadLink}</a> : <small>Not created yet</small>}</div>
+                <div><span>Docs + Signature Link</span>{client.portalLinks?.clientPortalLink || client.documents?.uploadLink || client.signature?.link ? <a href={client.portalLinks?.clientPortalLink || client.documents?.uploadLink || client.signature?.link} target="_blank" rel="noreferrer">{client.portalLinks?.clientPortalLink || client.documents?.uploadLink || client.signature?.link}</a> : <small>Not created yet</small>}</div>
+                <div><span>Client action</span><strong>Upload each required document and sign on-screen</strong><small>Client can clear and redraw signature before saving.</small></div>
               </div>
             </div>
           </section>
@@ -2062,12 +2273,12 @@ export default function App() {
           <section className="view-stack">
             <div className="panel-card">
               <div className="section-heading">
-                <div><h2>Client document request and upload status</h2><p>Filtered by selected service route: {coach.service}. Send the upload link before submitting to admin.</p></div>
-                <div className="button-row"><button className="secondary" onClick={requestDocuments}>Send Upload Link</button><button className="primary" onClick={sendSignatureLink}>Send Signature Link</button></div>
+                <div><h2>Client documents and signature</h2><p>Filtered by selected service route: {coach.service}. Send one simple client portal link before submitting to admin.</p></div>
+                <div className="button-row"><button className="primary" onClick={requestDocuments}>Send Docs + Signature Link</button></div>
               </div>
               <div className="link-grid">
-                <div><span>Upload link status</span><strong>{client.documents?.requestStatus || 'Not Sent'}</strong>{client.documents?.uploadLink ? <a href={client.documents.uploadLink}>{client.documents.uploadLink}</a> : <small>No upload link created yet</small>}</div>
-                <div><span>Signature status</span><strong>{client.signature?.status || 'Not Sent'}</strong>{client.signature?.link ? <a href={client.signature.link}>{client.signature.link}</a> : <small>No signature link created yet</small>}</div>
+                <div><span>Client portal status</span><strong>{client.documents?.requestStatus || client.signature?.status || 'Not Sent'}</strong>{client.portalLinks?.clientPortalLink || client.documents?.uploadLink || client.signature?.link ? <a href={client.portalLinks?.clientPortalLink || client.documents?.uploadLink || client.signature?.link} target="_blank" rel="noreferrer">{client.portalLinks?.clientPortalLink || client.documents?.uploadLink || client.signature?.link}</a> : <small>No client portal link created yet</small>}</div>
+                <div><span>Signature status</span><strong>{client.signature?.status || 'Not Sent'}</strong><small>Client signs on-screen, can clear errors, and saves when correct.</small></div>
               </div>
               <div className="document-grid">
                 {(client.documents?.items || documents.map((name) => ({ name, status: 'Missing' } as DocumentItem))).map((doc) => (
@@ -2183,6 +2394,28 @@ export default function App() {
               </div>
             </div>
 
+            <div className="panel-card tracker-board">
+              <div className="section-heading">
+                <div>
+                  <h3>Admin tracker layout</h3>
+                  <p>Based on the uploaded company tracker: sales handover, docs, DebiCheck/PDA, DHS/17.1/COB/17.2, proposal, acceptances, legal and closure.</p>
+                </div>
+                <Badge tone="blue">No spreadsheet duplication</Badge>
+              </div>
+              <div className="tracker-lanes">
+                {trackerLaneSummary.map((lane) => (
+                  <div className="tracker-lane" key={lane.title}>
+                    <div className="tracker-lane-top">
+                      <strong>{lane.title}</strong>
+                      <Badge tone={lane.blocked ? 'warn' : lane.active ? 'blue' : 'good'}>{lane.done}/{lane.tasks.length || 0}</Badge>
+                    </div>
+                    <p>{lane.fields}</p>
+                    <small>{lane.active} open · {lane.blocked} waiting/blocked</small>
+                  </div>
+                ))}
+              </div>
+            </div>
+
             <div className="two-column">
               <div className="panel-card">
                 <h3>Service-specific admin checklist</h3>
@@ -2224,7 +2457,7 @@ export default function App() {
                   <div><span>Available after reduced payment</span><strong>{currency(availableAfterReducedPayment)}</strong></div>
                   <div><span>DRR fee</span><strong>{(client.adminWorkflow?.services || []).includes('Debt Review Removal') ? currency(drrFee) : 'N/A'}</strong></div>
                 </div>
-                <div className="button-row"><button className="secondary" onClick={cancelNupayMandate}>Cancel Mandate</button><button className="primary" onClick={resendNupayMandate}>Send New Mandate</button><button className="secondary" onClick={requestDocuments}>Send Docs Link</button><button className="secondary" onClick={sendSignatureLink}>Send Signature Link</button></div>
+                <div className="button-row"><button className="secondary" onClick={cancelNupayMandate}>Cancel Mandate</button><button className="primary" onClick={resendNupayMandate}>Send New Mandate</button><button className="secondary" onClick={requestDocuments}>Send Docs + Signature Link</button></div>
                 <div className="mini-doc-list">
                   {(client.documents?.items || []).map((doc) => <div key={doc.name}><span>{doc.name}</span><Badge tone={doc.status === 'Uploaded' ? 'good' : doc.status === 'Requested' ? 'warn' : 'neutral'}>{doc.status}</Badge></div>)}
                 </div>

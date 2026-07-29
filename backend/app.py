@@ -14,6 +14,7 @@ Tenant isolation rule:
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import os
@@ -24,7 +25,7 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 
 try:
@@ -48,10 +49,11 @@ except Exception:  # pragma: no cover
     pdfium = None
 
 APP_NAME = "Fin-Tastic Sales Coach API"
-APP_VERSION = "2026.07-parser-dashboard-cleanup"
+APP_VERSION = "2026.07-render-login-khusela-fix"
 BASE_DIR = Path(__file__).resolve().parent
-DATA_DIR = BASE_DIR / "data"
-UPLOAD_DIR = BASE_DIR / "uploads"
+DATA_DIR = Path(os.environ.get("DATA_DIR", BASE_DIR / "data"))
+UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", BASE_DIR / "uploads"))
+FRONTEND_DIST = BASE_DIR / "frontend_dist"
 DB_PATH = DATA_DIR / "sales_coach_db.json"
 for folder in (DATA_DIR, UPLOAD_DIR):
     folder.mkdir(parents=True, exist_ok=True)
@@ -145,16 +147,16 @@ DEFAULT_TENANTS = [
         "postalAddress": "25 Batts Road, Wynberg, 7800",
         "town": "Cape Town",
         "users": [
-            {"id": "khusela-consultant-01", "name": "Khusela Consultant 1", "role": "Consultant", "email": "consultant01@kdebt.co.za"},
-            {"id": "khusela-consultant-02", "name": "Khusela Consultant 2", "role": "Consultant", "email": "consultant02@kdebt.co.za"},
-            {"id": "khusela-consultant-03", "name": "Khusela Consultant 3", "role": "Consultant", "email": "consultant03@kdebt.co.za"},
-            {"id": "khusela-consultant-04", "name": "Khusela Consultant 4", "role": "Consultant", "email": "consultant04@kdebt.co.za"},
-            {"id": "khusela-consultant-05", "name": "Khusela Consultant 5", "role": "Consultant", "email": "consultant05@kdebt.co.za"},
-            {"id": "khusela-consultant-06", "name": "Khusela Consultant 6", "role": "Consultant", "email": "consultant06@kdebt.co.za"},
-            {"id": "khusela-consultant-07", "name": "Khusela Consultant 7", "role": "Consultant", "email": "consultant07@kdebt.co.za"},
-            {"id": "khusela-consultant-08", "name": "Khusela Consultant 8", "role": "Consultant", "email": "consultant08@kdebt.co.za"},
-            {"id": "khusela-consultant-09", "name": "Khusela Consultant 9", "role": "Consultant", "email": "consultant09@kdebt.co.za"},
-            {"id": "khusela-consultant-10", "name": "Khusela Consultant 10", "role": "Consultant", "email": "consultant10@kdebt.co.za"},
+            {"id": "khusela-consultant-01", "name": "Khusela Consultant 1", "role": "Consultant", "team": "Team Ignite", "email": "consultant01@kdebt.co.za"},
+            {"id": "khusela-consultant-02", "name": "Khusela Consultant 2", "role": "Consultant", "team": "Team Ignite", "email": "consultant02@kdebt.co.za"},
+            {"id": "khusela-consultant-03", "name": "Khusela Consultant 3", "role": "Consultant", "team": "Team Ignite", "email": "consultant03@kdebt.co.za"},
+            {"id": "khusela-consultant-04", "name": "Khusela Consultant 4", "role": "Consultant", "team": "Team Momentum", "email": "consultant04@kdebt.co.za"},
+            {"id": "khusela-consultant-05", "name": "Khusela Consultant 5", "role": "Consultant", "team": "Team Momentum", "email": "consultant05@kdebt.co.za"},
+            {"id": "khusela-consultant-06", "name": "Khusela Consultant 6", "role": "Consultant", "team": "Team Momentum", "email": "consultant06@kdebt.co.za"},
+            {"id": "khusela-consultant-07", "name": "Khusela Consultant 7", "role": "Consultant", "team": "Team Phoenix", "email": "consultant07@kdebt.co.za"},
+            {"id": "khusela-consultant-08", "name": "Khusela Consultant 8", "role": "Consultant", "team": "Team Phoenix", "email": "consultant08@kdebt.co.za"},
+            {"id": "khusela-consultant-09", "name": "Khusela Consultant 9", "role": "Consultant", "team": "Team Phoenix", "email": "consultant09@kdebt.co.za"},
+            {"id": "khusela-consultant-10", "name": "Khusela Consultant 10", "role": "Consultant", "team": "Team Phoenix", "email": "consultant10@kdebt.co.za"},
             {"id": "khusela-admin-01", "name": "Khusela Admin 1", "role": "Admin", "email": "admin01@kdebt.co.za"},
             {"id": "khusela-admin-02", "name": "Khusela Admin 2", "role": "Admin", "email": "admin02@kdebt.co.za"},
             {"id": "khusela-admin-03", "name": "Khusela Admin 3", "role": "Admin", "email": "admin03@kdebt.co.za"},
@@ -240,20 +242,20 @@ PRODUCT_KNOWLEDGE_MODULES: List[Dict[str, Any]] = [
         ],
     },
     {
-        "id": "nupay-pda-admin",
-        "title": "NuPay, PDA and Admin Handover",
-        "service": "Workflow",
-        "summary": "Consultants must complete accurate handover data so admin can continue the correct service workflow and payment setup.",
+        "id": "nupay-debicheck",
+        "title": "NuPay DebiCheck",
+        "service": "NuPay DebiCheck",
+        "summary": "NuPay DebiCheck is used to collect the correct accepted amount for the selected service: DRR fee, mediation reduced payment, or both as separate mandates where applicable.",
         "keyPoints": [
-            "NuPay DebiCheck can apply to DRR fee, mediation reduced payment, or both when applicable.",
-            "The DRR 1/2/3 month selector only applies to the removal fee, not ongoing mediation payments.",
-            "Admin must see documents, signature, fees, reduced amounts, included creditors, NuPay status and PDA fields.",
-            "Tenant isolation means consultants and managers only see clients inside their own tenant.",
+            "Removal DebiCheck is for the R7,000 Debt Review Removal service fee only.",
+            "Mediation DebiCheck is for the ongoing reduced creditor/payment proposal only.",
+            "The DRR 1/2/3 month selector applies only to the removal fee, not ongoing mediation payments.",
+            "Where both services apply, send two separate DebiChecks so the client understands each collection clearly.",
         ],
         "salesAngles": [
-            "Good data protects the sale after handover.",
-            "The consultant should not submit to admin until the client, budget, accounts and service route make sense.",
-            "A complete document pack improves conversion and reduces admin delays.",
+            "Explain each mandate slowly and separately so the client knows what will be collected and why.",
+            "Use the start date to align the debit order with the client's salary date and affordability.",
+            "Never label a mediation payment as a DRR fee or a DRR fee as creditor repayment.",
         ],
     },
 ]
@@ -267,9 +269,9 @@ PRODUCT_KNOWLEDGE_QUESTIONS: List[Dict[str, Any]] = [
     {"id": "q6", "moduleId": "debt-review-removal", "service": "Debt Review Removal", "question": "Which documents are required for Debt Review Removal in this workflow?", "options": ["ID, 3 months bank statements, signed 17.W/17.3, latest payslip and POA", "Signed Form 16 only", "Proof of address and photos only", "Only bank statements"], "answerIndex": 0},
     {"id": "q7", "moduleId": "debt-mediation", "service": "Debt Mediation", "question": "Debt Mediation should be positioned as...", "options": ["Statutory Debt Review protection", "A non-statutory negotiation/reduced-payment service", "A guaranteed loan approval", "A court order"], "answerIndex": 1},
     {"id": "q8", "moduleId": "debt-mediation", "service": "Debt Mediation", "question": "What must the consultant compare when selling mediation?", "options": ["Original instalments versus reduced proposal and budget affordability", "Only the client's age", "Only the credit score", "Only the consultant's target"], "answerIndex": 0},
-    {"id": "q9", "moduleId": "nupay-pda-admin", "service": "NuPay", "question": "The 1/2/3 month selector in NuPay applies to...", "options": ["Ongoing mediation payments", "Debt Review Removal fee collection period", "Every account balance", "PDA reference number"], "answerIndex": 1},
-    {"id": "q10", "moduleId": "nupay-pda-admin", "service": "Admin Handover", "question": "Before submitting to admin, the consultant should ensure...", "options": ["The selected service, client info, accounts, budget, documents/signature and NuPay status are clear", "Only the client's first name is captured", "The tenant is switched to another company", "No documents are requested"], "answerIndex": 0},
-    {"id": "q11", "moduleId": "nupay-pda-admin", "service": "Tenant Isolation", "question": "Tenant isolation means...", "options": ["All companies share one client list", "Each tenant sees only its own clients and users", "Consultants can see competitor clients", "Admin users bypass every tenant"], "answerIndex": 1},
+    {"id": "q9", "moduleId": "nupay-debicheck", "service": "NuPay DebiCheck", "question": "The 1/2/3 month selector in NuPay applies to...", "options": ["Ongoing mediation payments", "Debt Review Removal fee collection period", "Every account balance", "A credit score category"], "answerIndex": 1},
+    {"id": "q10", "moduleId": "nupay-debicheck", "service": "NuPay DebiCheck", "question": "When DRR and mediation both apply, what is the clearest DebiCheck approach?", "options": ["Send one unclear debit order and call everything DRR", "Send separate DebiChecks: one for removal fee and one for mediation reduced payment", "Avoid explaining start dates", "Tell the client the fee is a creditor balance"], "answerIndex": 1},
+    {"id": "q11", "moduleId": "debt-mediation", "service": "Debt Mediation", "question": "If a client has active balances but no confirmed Debt Review flag, which service is usually discussed first?", "options": ["Debt Mediation, based on affordability and creditor negotiation", "Debt Review Removal only", "Guaranteed new credit", "No service can help"], "answerIndex": 0},
     {"id": "q12", "moduleId": "debt-mediation", "service": "Sales Coach", "question": "The best tonality when discussing financial pressure is...", "options": ["Calm, protective and numbers-based", "Fear-based and aggressive", "Guaranteeing outcomes", "Blaming the client"], "answerIndex": 0},
 ]
 
@@ -629,15 +631,16 @@ def create_seed_db() -> Dict[str, Any]:
     db: Dict[str, Any] = {"version": APP_VERSION, "tenants": {}}
     for tenant in DEFAULT_TENANTS:
         tenant_id = tenant["id"]
-        db["tenants"][tenant_id] = {
+        tenant_record = deepcopy(tenant)
+        tenant_record.update({
             "id": tenant_id,
-            "name": tenant["name"],
-            "ncr": tenant["ncr"],
-            "users": tenant["users"],
             "clients": [],
             "uploads": [],
+            "commissionSnapshots": [],
+            "knowledgeAssessments": [],
             "createdAt": now_iso(),
-        }
+        })
+        db["tenants"][tenant_id] = tenant_record
     demo = make_client("liberty-credit-specialists", "Demo Asset Client", "lib-agent-1")
     demo.update({"phone": "0642965776", "whatsapp": "0642965776", "email": "client@example.com", "creditScore": 512, "scoreFound": True, "status": "Credit Report Uploaded"})
     demo["accounts"] = demo_accounts()
@@ -681,7 +684,10 @@ def load_db() -> Dict[str, Any]:
                     merged_users = []
                     for default_user in value:
                         previous = existing_users.pop(default_user.get("id"), {})
-                        merged_users.append({**default_user, **{k: v for k, v in previous.items() if k not in {"id", "role"}}})
+                        if tenant_id == "khusela-debt-management":
+                            merged_users.append(deepcopy(default_user))
+                        else:
+                            merged_users.append({**default_user, **{k: v for k, v in previous.items() if k not in {"id", "role"}}})
                     # Preserve legacy users for older demo tenants, but keep Khusela exactly at 10 consultants, 4 admins and 2 managers.
                     if tenant_id != "khusela-debt-management":
                         for legacy_user in existing_users.values():
@@ -903,12 +909,61 @@ def grade_product_assessment(tenant: Dict[str, Any], user_id: str, answers: Dict
     return result
 
 
+def heat_stats(value: Any) -> Dict[str, Any]:
+    total = money_to_float(value)
+    blocks = int(total // 5000)
+    next_target = (blocks + 1) * 5000
+    progress = min(100, round(((total % 5000) / 5000) * 100, 1)) if total >= 0 else 0
+    if blocks >= 10:
+        label = "Inferno"
+        emoji = "🔥🔥🔥"
+    elif blocks >= 6:
+        label = "Blazing"
+        emoji = "🔥🔥"
+    elif blocks >= 3:
+        label = "Heating Up"
+        emoji = "🔥"
+    elif blocks >= 1:
+        label = "Warm"
+        emoji = "♨️"
+    else:
+        label = "Cold Start"
+        emoji = "🌡️"
+    return {
+        "value": round(total, 2),
+        "heatBlocks": blocks,
+        "heatLabel": label,
+        "heatEmoji": emoji,
+        "progressToNextHeat": progress,
+        "nextHeatTarget": next_target,
+        "nextHeatGap": max(0, round(next_target - total, 2)),
+    }
+
+
+def default_team_for_user(user: Dict[str, Any]) -> str:
+    if user.get("team"):
+        return str(user.get("team"))
+    user_id = str(user.get("id", ""))
+    if user_id.startswith("khusela-consultant-"):
+        try:
+            num = int(user_id.rsplit("-", 1)[-1])
+            if num <= 3:
+                return "Team Ignite"
+            if num <= 6:
+                return "Team Momentum"
+            return "Team Phoenix"
+        except Exception:
+            pass
+    return "Main Floor"
+
+
 def consultant_dashboard_metrics(tenant: Dict[str, Any]) -> Dict[str, Any]:
-    """Return consultant leaderboard metrics for the active tenant only.
+    """Return consultant, team and floor competition metrics for the active tenant only.
 
     Leads are counted from uploaded credit reports. DC value is the combined
     reduced-payment proposal value plus any applicable DRR removal fees.
     Documents received are counted from required document items marked Uploaded.
+    Heat increases for every R5,000 in DC/DRR value.
     """
     users = tenant.get("users", [])
     metrics: Dict[str, Dict[str, Any]] = {}
@@ -916,13 +971,14 @@ def consultant_dashboard_metrics(tenant: Dict[str, Any]) -> Dict[str, Any]:
     def ensure_user(user_id: str, fallback_name: str = "Unassigned") -> Dict[str, Any]:
         user = next((u for u in users if u.get("id") == user_id), None)
         if not user:
-            user = {"id": user_id or "unassigned", "name": fallback_name, "role": "Unassigned", "email": ""}
+            user = {"id": user_id or "unassigned", "name": fallback_name, "role": "Unassigned", "email": "", "team": "Main Floor"}
         uid = user.get("id") or "unassigned"
         if uid not in metrics:
             metrics[uid] = {
                 "userId": uid,
                 "name": user.get("name") or fallback_name,
                 "role": user.get("role", ""),
+                "team": default_team_for_user(user),
                 "email": user.get("email", ""),
                 "leadsGenerated": 0,
                 "uploadedReports": 0,
@@ -982,6 +1038,7 @@ def consultant_dashboard_metrics(tenant: Dict[str, Any]) -> Dict[str, Any]:
         row["dcValue"] = round(row["reducedInstallments"] + row["removalFees"], 2)
         req = row.get("requiredDocuments") or 0
         row["documentCompletionRate"] = round((row["documentsReceived"] / req) * 100, 1) if req else 0.0
+        row.update(heat_stats(row["dcValue"]))
         # Weighted score keeps the ranking practical for daily consultant management.
         row["performanceScore"] = round((row["leadsGenerated"] * 10) + (row["dcValue"] / 1000) + (row["documentsReceived"] * 4) + (row["clientsSubmitted"] * 8), 2)
         leaderboard.append(row)
@@ -989,6 +1046,46 @@ def consultant_dashboard_metrics(tenant: Dict[str, Any]) -> Dict[str, Any]:
     leaderboard.sort(key=lambda r: (r.get("performanceScore", 0), r.get("dcValue", 0), r.get("leadsGenerated", 0), r.get("documentsReceived", 0)), reverse=True)
     for idx, row in enumerate(leaderboard, start=1):
         row["rank"] = idx
+
+    team_map: Dict[str, Dict[str, Any]] = {}
+    for row in leaderboard:
+        if row.get("role") != "Consultant":
+            continue
+        team_name = row.get("team") or "Main Floor"
+        if team_name not in team_map:
+            team_map[team_name] = {
+                "team": team_name,
+                "consultants": 0,
+                "leadsGenerated": 0,
+                "uploadedReports": 0,
+                "clientsSubmitted": 0,
+                "reducedInstallments": 0.0,
+                "removalFees": 0.0,
+                "dcValue": 0.0,
+                "documentsReceived": 0,
+                "requiredDocuments": 0,
+                "performanceScore": 0.0,
+            }
+        team = team_map[team_name]
+        team["consultants"] += 1
+        for key in ["leadsGenerated", "uploadedReports", "clientsSubmitted", "documentsReceived", "requiredDocuments"]:
+            team[key] += int(row.get(key) or 0)
+        for key in ["reducedInstallments", "removalFees", "dcValue", "performanceScore"]:
+            team[key] += money_to_float(row.get(key))
+
+    teams = []
+    for team in team_map.values():
+        team["reducedInstallments"] = round(team["reducedInstallments"], 2)
+        team["removalFees"] = round(team["removalFees"], 2)
+        team["dcValue"] = round(team["dcValue"], 2)
+        req = team.get("requiredDocuments") or 0
+        team["documentCompletionRate"] = round((team["documentsReceived"] / req) * 100, 1) if req else 0.0
+        team.update(heat_stats(team["dcValue"]))
+        team["performanceScore"] = round(team["performanceScore"], 2)
+        teams.append(team)
+    teams.sort(key=lambda r: (r.get("performanceScore", 0), r.get("dcValue", 0), r.get("leadsGenerated", 0)), reverse=True)
+    for idx, team in enumerate(teams, start=1):
+        team["rank"] = idx
 
     summary = {
         "tenantClients": len(tenant.get("clients", [])),
@@ -998,10 +1095,13 @@ def consultant_dashboard_metrics(tenant: Dict[str, Any]) -> Dict[str, Any]:
         "reducedInstallments": round(sum(r["reducedInstallments"] for r in leaderboard), 2),
         "removalFees": round(sum(r["removalFees"] for r in leaderboard), 2),
         "documentsReceived": sum(r["documentsReceived"] for r in leaderboard),
+        "requiredDocuments": sum(r["requiredDocuments"] for r in leaderboard),
         "clientsSubmitted": sum(r["clientsSubmitted"] for r in leaderboard),
         "consultants": len([r for r in leaderboard if r.get("role") == "Consultant"]),
+        "teams": len(teams),
     }
-    return {"summary": summary, "leaderboard": leaderboard}
+    summary.update(heat_stats(summary["dcValue"]))
+    return {"summary": summary, "floorSummary": summary, "leaderboard": leaderboard, "teamLeaderboard": teams}
 
 
 def required_documents_for(service: str) -> List[str]:
@@ -1223,12 +1323,12 @@ def combined_nupay_summary(client: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def admin_task_templates(services: List[str]) -> List[Dict[str, Any]]:
-    """Service-aware admin workflow in the actual operational order.
+    """Service-aware admin workflow based on the uploaded Free Mee Admin File Tracker.
 
-    Debt Review tasks are intentionally sequenced from consultant handover to final
-    Form 19/bureau closure. The legal/statutory section only starts after signed
-    Form 16 is confirmed. Client-upload documents remain limited to the packs
-    requested by the business owner; statutory generated outputs are tracked here.
+    The tracker workbook is built around practical admin columns: sale/lead/closer,
+    DC value, ID/doc status, DHS/flag status, 17.1/COB/17.2 due dates, proposal,
+    client calc, acceptances, rework, final proposal, legal/magistrate/court order,
+    collections, DebiCheck/PDA, paid-up letters, 17.W/removal and clearance.
     """
     rows: List[Dict[str, Any]] = []
 
@@ -1275,56 +1375,57 @@ def admin_task_templates(services: List[str]) -> List[Dict[str, Any]]:
     for service in services:
         if service == "Debt Review Sales Coach":
             dr = "NCA s86 / Regulation 24 operational control"
-            add_step(service, 1, "Consultant Handover", "Receive consultant handover and lock selected service as Debt Review", evidence="Consultant handover snapshot with client info, accounts, reduced amount and notes", outcome="Admin owns the file")
-            add_step(service, 2, "Intake Verification", "Verify client profile, ID number, contact details, marital/joint status and spouse details", evidence="Updated client profile", minimum=True)
-            add_step(service, 3, "Required Client Documents", "Confirm only required client docs: signed Form 16, ID copy, latest payslip and 3 months bank statements", evidence="Signed Form 16, ID copy, latest payslip, 3 months bank statements", minimum=True, gate="Do not start statutory notices until complete")
-            add_step(service, 4, "Credit Agreement Review", "Verify all included credit agreements from credit report and mark excluded, closed, legal or prescribed-candidate accounts", evidence="Included-creditor schedule", minimum=True)
-            add_step(service, 5, "Budget / Affordability", "Verify nett income, living-expense budget, dependants, bank details and available amount before proposal", evidence="Captured living budget and affordability summary", minimum=True)
-            add_step(service, 6, "Form 16 Accepted", "Record Form 16 received/signed date and open the legal debt-review application timer", due_from="Signed Form 16", regulation="NCA s86 application control", evidence="Form 16 date and proof of receipt", minimum=True, gate="This is where the legal debt-review process starts")
-            add_step(service, 7, "Form 17.1", "Send Form 17.1/application notice to every included credit provider and registered credit bureau", due_business_days=5, due_from="Form 16/application received", regulation=dr, evidence="17.1 copies and proof of dispatch per creditor/bureau", minimum=True)
-            add_step(service, 8, "COB Requests", "Request Certificates of Balance from every included creditor and create follow-up dates", due_business_days=5, due_from="17.1 dispatch", regulation=dr, evidence="COB request log and creditor communication proof", minimum=True)
-            add_step(service, 9, "COB Capture", "Capture COB balances, arrears, instalments, interest/rates and account status per creditor", evidence="COB copy per creditor", minimum=True)
-            add_step(service, 10, "COB Reconciliation", "Compare COB values against parsed credit-report figures and resolve discrepancies", evidence="Reconciled creditor schedule with notes", minimum=True)
-            add_step(service, 11, "Assessment", "Complete over-indebtedness assessment using income, living budget, bank statements, payslip and COBs", due_business_days=30, due_from="Debt-review application date", regulation="NCA s86(6) assessment control", evidence="Assessment worksheet", minimum=True)
-            add_step(service, 12, "Assessment", "Check reckless-credit/legal-action indicators and flag accounts requiring legal/compliance review", evidence="Reckless/legal risk notes", minimum=True)
-            add_step(service, 13, "Form 17.2 Decision", "Issue Form 17.2 outcome: rejected/not over-indebted or accepted/over-indebted/restructuring", due_business_days=30, due_from="Debt-review application date", regulation="NCA s86 / Regulation 24 decision notification", evidence="Form 17.2 and proof of dispatch", minimum=True, gate="If rejected, stop Debt Review workflow and close or move to mediation")
-            add_step(service, 14, "Proposal", "Prepare restructuring proposal using available amount and included creditor schedule", evidence="Proposal calculation and creditor schedule", minimum=True)
-            add_step(service, 15, "Creditor Negotiation", "Send proposal to every included creditor and track accepted, rejected, counter-offer or no response", evidence="Proposal dispatch proof and response register", minimum=True)
-            add_step(service, 16, "Legal Pack", "Prepare consent order, NCT or magistrates court pack based on responses and case route", due_business_days=60, due_from="Debt-review application date", regulation="NCA s86(8), s87 and s86(10) risk control", evidence="Legal pack, case/reference number or submission proof", minimum=True)
-            add_step(service, 17, "PDA Setup", "Capture PDA name, reference, proposed distribution amount, debit day and first payment date", evidence="PDA reference/payment schedule", minimum=True, owner="Admin/PDA")
-            add_step(service, 18, "Active Debt Review", "Move case into active monitoring only after proposal/order/payment setup is confirmed", evidence="Active status note and first-payment plan", owner="Admin/PDA")
-            add_step(service, 19, "Aftercare", "Monitor monthly PDA payments, missed payments, disputes, balance updates and client changes", evidence="Monthly aftercare/payment notes", owner="Admin/PDA")
-            add_step(service, 20, "Variation", "If affordability changes, capture new budget/payslip/bank statements and run variation/re-proposal path", evidence="Variation pack or no-change note", owner="Admin/PDA")
-            add_step(service, 21, "Paid-Up Tracking", "Collect paid-up letters/settlement confirmations and update included accounts", evidence="Paid-up letters and settlement confirmations", owner="Admin/PDA")
-            add_step(service, 22, "Form 19 Clearance", "Issue Form 19 only when clearance requirements are met and all eligible obligations are satisfied", regulation="NCA s71 / NCR Form 19", evidence="Form 19, paid-up proof and debt counsellor approval", minimum=True, owner="Admin/PDA", gate="This is the successful legal end of Debt Review")
-            add_step(service, 23, "Bureau Closure", "Send clearance/update to bureaus/NCR records and verify debt-review flag removal/update", evidence="Bureau update proof and final credit-report/status check", minimum=True, owner="Admin/PDA")
-            add_step(service, 24, "Closed", "Notify client, lock audit trail and close the admin file", evidence="Client closure notice and final audit note", owner="Admin/PDA", outcome="Debt Review file completed")
+            add_step(service, 1, "Sales Handover", "Capture sale tracker fields: PDA, lead, closer, sale date, sale type, DC value, debit order amount and payment method", evidence="Consultant handover snapshot with lead/closer, sale date, service type, DC value, debit day and payment method", outcome="Admin file opened")
+            add_step(service, 2, "Sales Handover", "Confirm client status, application status and reason notes before admin starts processing", evidence="Client status, application status and reasoning notes from sales tracker")
+            add_step(service, 3, "Client Docs", "Confirm only required client documents: signed Form 16, ID copy, latest payslip and 3 months bank statements", evidence="Signed Form 16, ID copy, latest payslip and 3 months bank statements", minimum=True, gate="Do not send 17.1 until signed Form 16 and minimum docs are confirmed")
+            add_step(service, 4, "Client Docs", "Verify ID number, contact details, marital/joint status, single/joint application and spouse details where applicable", evidence="Verified client profile and single/joint application status", minimum=True)
+            add_step(service, 5, "Payment / DebiCheck", "Confirm debit day, debit month/frequency, DebiCheck or payment method and first collection readiness", evidence="DebiCheck/payment method record, debit day and collection month", owner="Admin/PDA")
+            add_step(service, 6, "DHS / Flag", "Capture DHS status, flag number and flagged date from tracker/DHS/credit-report evidence", evidence="DHS status, flag number and flagged date", minimum=True)
+            add_step(service, 7, "17.1 / COB", "Send Form 17.1 to all included credit providers and bureaus", due_business_days=5, due_from="Signed Form 16/application received", regulation=dr, evidence="17.1 sent date, proof of dispatch and 17.1 due date per creditor/bureau", minimum=True)
+            add_step(service, 8, "17.1 / COB", "Request and follow up Certificates of Balance for every included creditor", due_business_days=5, due_from="17.1 dispatch", regulation=dr, evidence="COB requested/received date, COB due date and creditor follow-up notes", minimum=True)
+            add_step(service, 9, "17.1 / COB", "Capture and reconcile COB balances, arrears, instalments and account statuses against the credit report", evidence="Reconciled COB schedule with discrepancy notes", minimum=True)
+            add_step(service, 10, "Assessment / 17.2", "Complete affordability and over-indebtedness assessment using income, bank statements, payslip, budget and COBs", due_business_days=30, due_from="Application date", regulation="NCA s86(6) assessment control", evidence="Assessment worksheet and budget affordability summary", minimum=True)
+            add_step(service, 11, "Assessment / 17.2", "Issue/capture Form 17.2 outcome and date; stop Debt Review if rejected/not over-indebted", due_business_days=30, due_from="Application date", regulation="NCA s86 / Regulation 24 decision notification", evidence="17.2 sent/accepted/rejected date and proof of dispatch", minimum=True, gate="Rejected matters must close or move to mediation/removal only if applicable")
+            add_step(service, 12, "Proposal", "Send client calculation and capture date sent before finalising the proposal", evidence="Client calculation sent flag/date and calculation copy")
+            add_step(service, 13, "Proposal", "Prepare and send provisional proposal to included creditors", evidence="Proposal sent date, proposal due date and dispatch proof", minimum=True)
+            add_step(service, 14, "Acceptances / Rework", "Track acceptances, outstanding acceptances, counters and acceptance due dates per creditor", evidence="Acceptance register, due dates and creditor responses", minimum=True)
+            add_step(service, 15, "Acceptances / Rework", "Manage rework items and capture rework date, reason and updated proposal values", evidence="Rework note/date and updated proposal pack")
+            add_step(service, 16, "Final Proposal / Legal", "Finalise proposal and capture final proposal date and due date", evidence="Final proposal copy/date and due date", minimum=True)
+            add_step(service, 17, "Final Proposal / Legal", "Send to legal/magistrate/NCT/court route where required and capture magistrate/court order status", due_business_days=60, due_from="Application date", regulation="NCA s86(8), s87 and s86(10) risk control", evidence="Legal pack, magistrate/case number, court order or submission proof", minimum=True)
+            add_step(service, 18, "PDA / Collections", "Capture PDA name/reference, collection amount, first payment date and active payment status", evidence="PDA reference/payment schedule/collection status", minimum=True, owner="Admin/PDA")
+            add_step(service, 19, "PDA / Collections", "Track collections, failed payments, reasons for no payment, restrike date, cash deposits and follow-up dates", evidence="Collections notes, failed-payment reason, restrike/cash deposit/follow-up/solved dates", owner="Admin/PDA")
+            add_step(service, 20, "PDA / Collections", "Monitor monthly M1/M2 payment status, missed payments, disputes and payment confirmations", evidence="Monthly payment notes and proof of payment/distribution", owner="Admin/PDA")
+            add_step(service, 21, "Paid-Up / Clearance", "Collect paid-up letters and settlement confirmations when accounts settle", evidence="Paid-up letters and settlement confirmations", owner="Admin/PDA")
+            add_step(service, 22, "Paid-Up / Clearance", "Issue Form 19 only when legal clearance requirements are met", regulation="NCA s71 / NCR Form 19", evidence="Form 19, paid-up proof and debt counsellor approval", minimum=True, owner="Admin/PDA", gate="Successful legal end of Debt Review")
+            add_step(service, 23, "Bureau Closure", "Send clearance/update to bureaus and verify debt-review flag removal/update", evidence="Bureau update proof and final credit-report/status check", minimum=True, owner="Admin/PDA")
+            add_step(service, 24, "Closed", "Notify client, lock audit trail and close admin file", evidence="Client closure notice and final audit note", owner="Admin/PDA", outcome="Debt Review file completed")
         elif service == "Debt Review Removal":
-            add_step(service, 1, "Removal Intake", "Receive consultant handover and lock selected service as Debt Review Removal", evidence="Consultant handover snapshot")
-            add_step(service, 2, "Required Client Documents", "Confirm only required client docs: ID copy, 3 months bank statements, signed Form 17.W/17.3, latest payslip and POA", evidence="ID, 3 months bank statements, signed 17.W/17.3, latest payslip, POA", minimum=True)
-            add_step(service, 3, "Status Verification", "Verify actual debt-review status from credit report/NCR/bureau/previous debt counsellor information", evidence="Debt-review status evidence", minimum=True)
-            add_step(service, 4, "Route Decision", "Classify route: pre-17.2, post-17.2, court/NCT order, paid-up/clearance, incorrect bureau flag or legal review", evidence="Removal route decision note", minimum=True, gate="Do not promise removal until the legal route is known")
-            add_step(service, 5, "Fee / Mandate", "Confirm R7,000 DRR service fee split and NuPay mandate collection status", evidence="Accepted NuPay mandate / fee record", minimum=True)
-            add_step(service, 6, "Removal Pack", "Prepare removal/upliftment pack according to the verified route", evidence="Removal pack and supporting documents", minimum=True)
-            add_step(service, 7, "Submission", "Submit bureau/NCR/court/NCT/previous-DC update action and store proof", evidence="Submission proof", minimum=True)
-            add_step(service, 8, "Confirmation", "Track confirmation and verify credit-report/bureau update", evidence="Confirmation letter/status update/final report", minimum=True)
-            add_step(service, 9, "Post Removal", "If balances remain, continue only the Debt Mediation workflow for those accounts", evidence="Remaining-balance and mediation note")
-            add_step(service, 10, "Closed", "Notify client and close the DRR admin file", evidence="Client closure notice")
+            add_step(service, 1, "Removal Handover", "Capture removal tracker fields: sale date, code/reference, consultant, debit amount/date/month/duration and application status", evidence="Removal handover snapshot with fee, debit duration, app status and notes")
+            add_step(service, 2, "Removal Docs", "Confirm only required docs: ID copy, 3 months bank statements, signed 17.W/17.3, latest payslip and POA", evidence="ID, 3 months bank statements, signed 17.W/17.3, latest payslip, POA", minimum=True)
+            add_step(service, 3, "Removal Docs", "Confirm signature received and client authority before removal work starts", evidence="Signature/POA status", minimum=True)
+            add_step(service, 4, "Removal DebiCheck", "Send/confirm separate NuPay DebiCheck for the DRR removal fee only", evidence="Removal DebiCheck mandate, accepted status, debit date/month and M1-M6 split", minimum=True)
+            add_step(service, 5, "DHS / Transfer", "Verify DHS/debt-review status, transfer status and previous debt counsellor/17.7 status where applicable", evidence="DHS status, transfer status, transfer accepted/declined and previous DC notes", minimum=True)
+            add_step(service, 6, "17.W / 17.3", "Confirm 17.W/17.3 route and received date/status", evidence="17.W/17.3 document and route decision", minimum=True, gate="Do not promise removal until route is verified")
+            add_step(service, 7, "Removal Pack", "Prepare bureau/NCR/previous-DC/court/NCT removal pack based on verified route", evidence="Removal pack and supporting documents", minimum=True)
+            add_step(service, 8, "Court / Legal", "Capture court date, case number, court order, PS Legal/Freemee allocation where applicable", evidence="Case number, court date/order or legal allocation note")
+            add_step(service, 9, "Paid-Up / Clearance", "Track paid-up letters, cash deposits, transfer completed and clearance certificate where needed", evidence="Paid-up letters, cash deposit proof, transfer completion or clearance certificate")
+            add_step(service, 10, "Confirmation", "Verify final bureau/credit-report update and confirm flag removed or corrected", evidence="Final bureau/report status proof", minimum=True)
+            add_step(service, 11, "Closed", "Notify client and close the DRR file", evidence="Client closure notice and audit note")
         elif service == "Debt Mediation":
-            add_step(service, 1, "Mediation Intake", "Receive consultant handover and lock selected service as Debt Mediation", evidence="Consultant handover snapshot")
-            add_step(service, 2, "Required Client Documents", "Confirm only required client docs: ID copy, 3 months bank statements, latest payslip and POA", evidence="ID, 3 months bank statements, latest payslip, POA", minimum=True)
-            add_step(service, 3, "Authority / Limits", "Confirm client authority and make clear that mediation is not statutory Debt Review protection", evidence="POA/authority and disclosure note", minimum=True)
-            add_step(service, 4, "Budget / Affordability", "Verify income, living budget, available amount and bank details", evidence="Captured affordability summary", minimum=True)
-            add_step(service, 5, "Creditor Schedule", "Confirm included creditors and remove excluded, closed or non-negotiated accounts", evidence="Mediation creditor schedule", minimum=True)
-            add_step(service, 6, "Proposal", "Prepare reduced-payment proposal per creditor using balance, arrears, original instalment and reduced amount", evidence="Proposal pack", minimum=True)
-            add_step(service, 7, "Creditor Dispatch", "Send proposal to every included creditor and store proof", evidence="Email/proof of dispatch", minimum=True)
-            add_step(service, 8, "Negotiation", "Track acceptance, rejection, counter-offer and escalation per creditor", evidence="Creditor response register", minimum=True)
-            add_step(service, 9, "NuPay / Collection", "Send or confirm NuPay mandate for the ongoing reduced payment only", evidence="Accepted mandate and payment schedule", minimum=True, owner="Admin/PDA")
-            add_step(service, 10, "Monitoring", "Monitor first payment, creditor responses and client/creditor status notes", evidence="Payment and status notes", owner="Admin/PDA")
-            add_step(service, 11, "Closed / Active", "Move to active monitoring or close when arrangement is completed/cancelled", evidence="Closure or active-monitoring note", owner="Admin/PDA")
+            add_step(service, 1, "Mediation Handover", "Capture sales tracker fields: lead, closer, sale date, sale type, DC value/reduced payment and payment method", evidence="Mediation handover snapshot with consultant, sale date and reduced payment")
+            add_step(service, 2, "Mediation Docs", "Confirm only required docs: ID copy, 3 months bank statements, latest payslip and POA", evidence="ID, 3 months bank statements, latest payslip, POA", minimum=True)
+            add_step(service, 3, "Budget / Affordability", "Verify budget, income and available amount for mediation proposal", evidence="Living budget and affordability summary", minimum=True)
+            add_step(service, 4, "Mediation DebiCheck", "Send/confirm separate NuPay DebiCheck for the ongoing mediation/reduced payment only", evidence="Mediation DebiCheck mandate, start date and amount", owner="Admin/PDA")
+            add_step(service, 5, "Creditor Schedule", "Confirm included creditors and remove excluded/closed/non-negotiated accounts", evidence="Mediation creditor schedule", minimum=True)
+            add_step(service, 6, "Client Calc / Proposal", "Send client calculation and capture date sent", evidence="Client calc sent flag/date and calculation copy")
+            add_step(service, 7, "Proposal", "Prepare and send creditor proposals", evidence="Proposal sent date, due date and dispatch proof", minimum=True)
+            add_step(service, 8, "Acceptances / Counter", "Track acceptances, outstanding acceptances, counters and follow-up notes", evidence="Creditor acceptance/counter/outstanding register", minimum=True)
+            add_step(service, 9, "Rework", "Capture rework items, more-money requests or revised reduced amount", evidence="Rework/more-money note and revised proposal")
+            add_step(service, 10, "Collections", "Track first payment, failed DebiCheck, collections feedback, restrike and client promise-to-pay", evidence="Collection notes, failed payment reasons and solved/follow-up dates", owner="Admin/PDA")
+            add_step(service, 11, "Active / Closed", "Move to active monitoring or close when arrangement is completed/cancelled", evidence="Active-monitoring or closure note", owner="Admin/PDA")
         else:
-            add_step(service, 1, "Manual Review", "Review parser output and select the correct service route before sending statutory documents or sales promises", evidence="Manual-review note", minimum=True)
-            add_step(service, 2, "Manual Review", "Confirm required documents and compliance risk before admin processing", evidence="Admin decision note", minimum=True)
+            add_step(service, 1, "Manual Review", "Review parser output and select the correct service route before admin processing", evidence="Manual-review note", minimum=True)
+            add_step(service, 2, "Manual Review", "Confirm required documents, payment and compliance risk before processing", evidence="Admin decision note", minimum=True)
     return rows
 
 def merge_admin_workflow(client: Dict[str, Any], coach: Dict[str, Any]) -> Dict[str, Any]:
@@ -2806,7 +2907,11 @@ def parse_credit_report(path: Path, original_filename: str) -> Dict[str, Any]:
 
 @app.get("/")
 def root():
-    return jsonify({"success": True, "app": APP_NAME, "version": APP_VERSION, "isolation": "X-Tenant-ID scoped"})
+    """Serve the React app in production; fall back to API status in local backend-only mode."""
+    index_file = FRONTEND_DIST / "index.html"
+    if index_file.exists():
+        return send_from_directory(FRONTEND_DIST, "index.html")
+    return jsonify({"success": True, "app": APP_NAME, "version": APP_VERSION, "isolation": "X-Tenant-ID scoped", "frontend": "not built"})
 
 
 @app.get("/health")
@@ -3125,7 +3230,7 @@ def validate_public_link(tenant_id: str, kind: str, client_id: str, token: str) 
 def portal_page(title: str, body: str) -> str:
     return f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'>
 <title>{html_escape(title)} · Fin-Tastic</title><style>
-body{{margin:0;font-family:Arial,Helvetica,sans-serif;background:#eef6f8;color:#0b1930}}.wrap{{max-width:840px;margin:30px auto;padding:18px}}.card{{background:#fff;border:1px solid #d8e4ec;border-radius:18px;padding:22px;box-shadow:0 20px 60px rgba(10,30,60,.08)}}h1{{margin:0 0 10px;font-size:28px}}p{{color:#52647b;line-height:1.5}}label{{display:block;margin:12px 0 6px;font-weight:700}}input,select,textarea{{width:100%;box-sizing:border-box;border:1px solid #cdddea;border-radius:10px;padding:11px;background:#f8fbfd}}button{{border:0;border-radius:12px;padding:12px 16px;background:#0e8c8c;color:#fff;font-weight:800;cursor:pointer}}.muted{{color:#68788d;font-size:13px}}.ok{{padding:12px;border-radius:12px;background:#e8fff4;border:1px solid #aee8cb;color:#095f37}}.bad{{padding:12px;border-radius:12px;background:#fff2f2;border:1px solid #f2b8b8;color:#8a1f1f}}.doc{{display:grid;grid-template-columns:1fr 170px;gap:10px;align-items:center;border:1px solid #e4edf4;border-radius:12px;padding:12px;margin:10px 0}}.doc small{{color:#607086}}.badge{{display:inline-block;border-radius:999px;padding:5px 9px;background:#edf4fb;font-weight:700;font-size:12px}}</style>
+body{{margin:0;font-family:Arial,Helvetica,sans-serif;background:#eef6f8;color:#0b1930}}.wrap{{max-width:940px;margin:30px auto;padding:18px}}.card{{background:#fff;border:1px solid #d8e4ec;border-radius:18px;padding:22px;box-shadow:0 20px 60px rgba(10,30,60,.08)}}h1{{margin:0 0 10px;font-size:28px}}h2{{margin:0 0 8px;font-size:20px}}p{{color:#52647b;line-height:1.5}}label{{display:block;margin:12px 0 6px;font-weight:700}}input,select,textarea{{width:100%;box-sizing:border-box;border:1px solid #cdddea;border-radius:10px;padding:11px;background:#f8fbfd}}button{{border:0;border-radius:12px;padding:12px 16px;background:#0e8c8c;color:#fff;font-weight:800;cursor:pointer}}button:hover{{filter:brightness(.98)}}.secondary-btn{{background:#edf4fb;color:#0b1930;border:1px solid #cdddea}}.muted{{color:#68788d;font-size:13px}}.ok{{padding:12px;border-radius:12px;background:#e8fff4;border:1px solid #aee8cb;color:#095f37;margin:12px 0}}.bad{{padding:12px;border-radius:12px;background:#fff2f2;border:1px solid #f2b8b8;color:#8a1f1f;margin:12px 0}}.portal-section{{margin-top:18px;padding-top:18px;border-top:1px solid #e5eef5}}.doc-list{{display:grid;gap:10px}}.doc-row{{display:grid;grid-template-columns:1.2fr auto 1.2fr;gap:12px;align-items:center;border:1px solid #e4edf4;border-radius:14px;padding:12px;background:#fbfdff}}.doc-copy small{{display:block;color:#607086;margin-top:4px}}.doc-upload-form{{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center}}.doc-upload-form input{{padding:9px}}.badge{{display:inline-block;border-radius:999px;padding:6px 10px;background:#edf4fb;font-weight:700;font-size:12px;white-space:nowrap}}.sig-canvas{{width:100%;height:190px;border:1px solid #cdddea;border-radius:14px;background:#fff;touch-action:none;display:block}}.signature-status{{display:inline-block;margin:8px 0 12px;padding:8px 10px;border-radius:999px;background:#edf8f6;color:#0b625e;font-size:13px}}.button-row{{display:flex;gap:10px;flex-wrap:wrap;align-items:center}}.portal-buttons{{margin-top:12px}}@media(max-width:760px){{.wrap{{margin:0;padding:10px}}.card{{border-radius:14px;padding:16px}}.doc-row{{grid-template-columns:1fr}}.doc-upload-form{{grid-template-columns:1fr}}}}</style>
 </head><body><main class='wrap'><section class='card'>{body}</section></main></body></html>"""
 
 
@@ -3133,17 +3238,225 @@ def portal_error(message: str, status: int = 400):
     return portal_page("Link problem", f"<h1>Link problem</h1><div class='bad'>{html_escape(message)}</div><p>Please contact your consultant and ask them to send a new link.</p>"), status, {"Content-Type": "text/html; charset=utf-8"}
 
 
-@app.get("/portal/<tenant_id>/documents/<client_id>/<token>")
-def public_documents_page(tenant_id: str, client_id: str, token: str):
-    db, client, error = validate_public_link(tenant_id, "documents", client_id, token)
+
+
+def _save_portal_document_upload(tenant_id: str, client: Dict[str, Any], doc_name: str, file) -> Tuple[bool, str]:
+    """Save one uploaded portal document and update the matching required-doc row."""
+    if not file or not getattr(file, "filename", ""):
+        return False, "Please choose a file to upload."
+    safe_name = re.sub(r"[^A-Za-z0-9_.-]", "_", file.filename)
+    client_id = str(client.get("id") or "client")
+    doc_dir = UPLOAD_DIR / tenant_id / "client_docs" / client_id
+    doc_dir.mkdir(parents=True, exist_ok=True)
+    stored = doc_dir / f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{secrets.token_hex(4)}_{safe_name}"
+    file.save(stored)
+    client.setdefault("documents", {}).setdefault("items", [])
+    matched = False
+    for item in client["documents"].get("items", []):
+        if item.get("name") == doc_name:
+            item.update({
+                "status": "Uploaded",
+                "filename": file.filename,
+                "uploadedAt": now_iso(),
+                "source": "client-portal",
+                "storedPath": str(stored),
+            })
+            matched = True
+            break
+    if not matched:
+        client["documents"].setdefault("items", []).append({
+            "name": doc_name,
+            "status": "Uploaded",
+            "filename": file.filename,
+            "uploadedAt": now_iso(),
+            "source": "client-portal",
+            "storedPath": str(stored),
+            "notes": "",
+        })
+    client["documents"]["requestStatus"] = "Partially Uploaded"
+    if client["documents"].get("items") and all(item.get("status") == "Uploaded" for item in client["documents"].get("items", [])):
+        client["documents"]["requestStatus"] = "Complete"
+        client["status"] = "Docs Received"
+    client["updatedAt"] = now_iso()
+    return True, f"{doc_name} uploaded successfully."
+
+
+def _save_portal_signature(tenant_id: str, client: Dict[str, Any], signer: str, id_number: str, signature_data: str) -> Tuple[bool, str]:
+    """Save drawn signature image from a data URL and mark the file signed."""
+    if not signature_data or not signature_data.startswith("data:image/png;base64,"):
+        return False, "Please sign on the signature line before saving."
+    try:
+        encoded = signature_data.split(",", 1)[1]
+        raw = base64.b64decode(encoded, validate=True)
+    except Exception:
+        return False, "The signature image could not be read. Please clear and sign again."
+    client_id = str(client.get("id") or "client")
+    sig_dir = UPLOAD_DIR / tenant_id / "signatures" / client_id
+    sig_dir.mkdir(parents=True, exist_ok=True)
+    sig_file = sig_dir / f"signature_{datetime.now().strftime('%Y%m%d%H%M%S')}_{secrets.token_hex(4)}.png"
+    sig_file.write_bytes(raw)
+    client.setdefault("signature", {})
+    client["signature"].update({
+        "status": "Signed",
+        "signedAt": now_iso(),
+        "signedBy": signer or client.get("fullName") or "Client",
+        "signedIdNumber": id_number or client.get("idNumber") or "",
+        "signedIp": request.remote_addr or "",
+        "signatureImagePath": str(sig_file),
+        "method": "Drawn electronic signature",
+    })
+    client["updatedAt"] = now_iso()
+    return True, "Signature saved successfully."
+
+
+def render_combined_client_portal(tenant_id: str, token_kind: str, client_id: str, token: str, notice: str = "", notice_good: bool = True):
+    db, client, error = validate_public_link(tenant_id, token_kind, client_id, token)
     if error or not client:
         return portal_error(error or "Invalid link")
     ensure_client_workflow(client)
     items = client.get("documents", {}).get("items", [])
-    doc_options = "".join(f"<option value='{html_escape(item.get('name'))}'>{html_escape(item.get('name'))} - {html_escape(item.get('status'))}</option>" for item in items)
-    docs_html = "".join(f"<div class='doc'><div><strong>{html_escape(item.get('name'))}</strong><br><small>{html_escape(item.get('filename') or 'Awaiting upload')}</small></div><span class='badge'>{html_escape(item.get('status') or 'Missing')}</span></div>" for item in items)
-    body = f"""<h1>Upload your documents</h1><p class='muted'>Client: {html_escape(client.get('fullName'))} · Tenant: {html_escape(tenant_id)}</p><p>Please choose the document type and upload the matching file. PDF, JPG and PNG files are accepted.</p><form method='post' enctype='multipart/form-data'><label>Document type</label><select name='docName'>{doc_options}</select><label>Choose file</label><input type='file' name='document' accept='.pdf,.jpg,.jpeg,.png' required><p><button type='submit'>Upload Document</button></p></form><h2>Required documents</h2>{docs_html}"""
-    return portal_page("Upload documents", body), 200, {"Content-Type": "text/html; charset=utf-8"}
+    if not items:
+        items = [{"name": name, "status": "Missing"} for name in required_documents_for(client.get("serviceType", "Needs Manual Review"))]
+        client.setdefault("documents", {})["items"] = items
+    notice_html = ""
+    if notice:
+        notice_class = "ok" if notice_good else "bad"
+        notice_html = f"<div class='{notice_class}'>{html_escape(notice)}</div>"
+    doc_cards = []
+    for index, item in enumerate(items):
+        doc_name = item.get("name") or "Client document"
+        status = item.get("status") or "Missing"
+        filename = item.get("filename") or "No file uploaded yet"
+        doc_cards.append(f"""
+        <div class='doc-row'>
+          <div class='doc-copy'>
+            <strong>{html_escape(doc_name)}</strong>
+            <small>{html_escape(filename)}</small>
+          </div>
+          <span class='badge'>{html_escape(status)}</span>
+          <form method='post' enctype='multipart/form-data' class='doc-upload-form'>
+            <input type='hidden' name='action' value='upload_document'>
+            <input type='hidden' name='docName' value='{html_escape(doc_name)}'>
+            <input id='doc_{index}' type='file' name='document' accept='.pdf,.jpg,.jpeg,.png' required>
+            <button type='submit'>Upload</button>
+          </form>
+        </div>
+        """)
+    signature_status = (client.get("signature") or {}).get("status", "Not Sent")
+    signature_script = """
+<script>
+(function(){
+  const canvas = document.getElementById('sigCanvas');
+  const clearBtn = document.getElementById('clearSig');
+  const form = document.getElementById('signatureForm');
+  const hidden = document.getElementById('signatureData');
+  if(!canvas || !form || !hidden) return;
+  const ctx = canvas.getContext('2d');
+  let drawing = false;
+  let hasDrawn = false;
+  function fitCanvas(){
+    const ratio = Math.max(window.devicePixelRatio || 1, 1);
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = Math.floor(rect.width * ratio);
+    canvas.height = Math.floor(rect.height * ratio);
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    resetCanvas(false);
+  }
+  function resetCanvas(markClear){
+    const rect = canvas.getBoundingClientRect();
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, rect.width, rect.height);
+    ctx.strokeStyle = '#c1ccd8';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(18, rect.height - 28);
+    ctx.lineTo(rect.width - 18, rect.height - 28);
+    ctx.stroke();
+    ctx.fillStyle = '#6b7c90';
+    ctx.font = '13px Arial';
+    ctx.fillText('Sign here', 20, rect.height - 10);
+    if(markClear){ hasDrawn = false; hidden.value = ''; }
+  }
+  function point(evt){
+    const rect = canvas.getBoundingClientRect();
+    const src = evt.touches ? evt.touches[0] : evt;
+    return { x: src.clientX - rect.left, y: src.clientY - rect.top };
+  }
+  function start(evt){ evt.preventDefault(); drawing = true; const p = point(evt); ctx.beginPath(); ctx.moveTo(p.x, p.y); }
+  function move(evt){ if(!drawing) return; evt.preventDefault(); const p = point(evt); ctx.strokeStyle = '#0b1930'; ctx.lineWidth = 2.4; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.lineTo(p.x, p.y); ctx.stroke(); hasDrawn = true; }
+  function end(evt){ if(evt) evt.preventDefault(); drawing = false; }
+  canvas.addEventListener('mousedown', start); canvas.addEventListener('mousemove', move); window.addEventListener('mouseup', end);
+  canvas.addEventListener('touchstart', start, {passive:false}); canvas.addEventListener('touchmove', move, {passive:false}); canvas.addEventListener('touchend', end, {passive:false});
+  clearBtn && clearBtn.addEventListener('click', function(){ resetCanvas(true); });
+  form.addEventListener('submit', function(evt){
+    if(!hasDrawn){ evt.preventDefault(); alert('Please sign on the line before saving.'); return false; }
+    hidden.value = canvas.toDataURL('image/png');
+  });
+  window.addEventListener('resize', fitCanvas);
+  fitCanvas();
+})();
+</script>
+"""
+    body = f"""
+<h1>Client documents and signature</h1>
+<p class='muted'>Client: {html_escape(client.get('fullName'))} · ID: {html_escape(client.get('idNumber'))}</p>
+{notice_html}
+<div class='portal-section'>
+  <h2>1. Upload required documents</h2>
+  <p>Upload each document next to its name. Accepted files: PDF, JPG and PNG.</p>
+  <div class='doc-list'>{''.join(doc_cards)}</div>
+</div>
+<div class='portal-section'>
+  <h2>2. Sign authority</h2>
+  <p>Sign on the line below. Use <strong>Clear signature</strong> if you make a mistake, then save once it looks correct.</p>
+  <div class='signature-status'>Current signature status: <strong>{html_escape(signature_status)}</strong></div>
+  <form method='post' id='signatureForm' class='signature-form'>
+    <input type='hidden' name='action' value='save_signature'>
+    <input type='hidden' id='signatureData' name='signatureData'>
+    <label>Full name</label>
+    <input name='signerName' value='{html_escape(client.get('fullName'))}' required>
+    <label>South African ID number</label>
+    <input name='idNumber' value='{html_escape(client.get('idNumber'))}' required>
+    <canvas id='sigCanvas' class='sig-canvas'></canvas>
+    <div class='button-row portal-buttons'>
+      <button type='button' id='clearSig' class='secondary-btn'>Clear signature</button>
+      <button type='submit'>Save signature</button>
+    </div>
+  </form>
+</div>
+{signature_script}
+"""
+    return portal_page("Client documents and signature", body), 200, {"Content-Type": "text/html; charset=utf-8"}
+
+
+@app.get("/portal/<tenant_id>/client-intake/<client_id>/<token>")
+def public_client_intake_page(tenant_id: str, client_id: str, token: str):
+    return render_combined_client_portal(tenant_id, "client-intake", client_id, token)
+
+
+@app.post("/portal/<tenant_id>/client-intake/<client_id>/<token>")
+def public_client_intake_submit(tenant_id: str, client_id: str, token: str):
+    db, client, error = validate_public_link(tenant_id, "client-intake", client_id, token)
+    if error or not db or not client:
+        return portal_error(error or "Invalid link")
+    ensure_client_workflow(client)
+    action = request.form.get("action") or ""
+    ok = False
+    message = "Nothing was saved."
+    if action == "upload_document":
+        doc_name = request.form.get("docName") or "Client document"
+        ok, message = _save_portal_document_upload(tenant_id, client, doc_name, request.files.get("document") or request.files.get("file"))
+    elif action == "save_signature":
+        ok, message = _save_portal_signature(tenant_id, client, request.form.get("signerName") or client.get("fullName") or "", request.form.get("idNumber") or client.get("idNumber") or "", request.form.get("signatureData") or "")
+    else:
+        message = "Unknown action. Please use the upload buttons or signature save button."
+    save_db(db)
+    return render_combined_client_portal(tenant_id, "client-intake", client_id, token, message, ok)
+
+
+@app.get("/portal/<tenant_id>/documents/<client_id>/<token>")
+def public_documents_page(tenant_id: str, client_id: str, token: str):
+    return render_combined_client_portal(tenant_id, "documents", client_id, token)
 
 
 @app.post("/portal/<tenant_id>/documents/<client_id>/<token>")
@@ -3152,39 +3465,14 @@ def public_documents_upload(tenant_id: str, client_id: str, token: str):
     if error or not db or not client:
         return portal_error(error or "Invalid link")
     ensure_client_workflow(client)
-    doc_name = request.form.get("docName") or "Client document"
-    file = request.files.get("document") or request.files.get("file")
-    if not file or not file.filename:
-        return portal_error("Please choose a file to upload.")
-    safe_name = re.sub(r"[^A-Za-z0-9_.-]", "_", file.filename)
-    doc_dir = UPLOAD_DIR / tenant_id / "client_docs" / client_id
-    doc_dir.mkdir(parents=True, exist_ok=True)
-    stored = doc_dir / f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{secrets.token_hex(4)}_{safe_name}"
-    file.save(stored)
-    matched = False
-    for item in client["documents"].get("items", []):
-        if item.get("name") == doc_name:
-            item.update({"status": "Uploaded", "filename": file.filename, "uploadedAt": now_iso(), "source": "portal", "storedPath": str(stored)})
-            matched = True
-            break
-    if not matched:
-        client["documents"].setdefault("items", []).append({"name": doc_name, "status": "Uploaded", "filename": file.filename, "uploadedAt": now_iso(), "source": "portal", "storedPath": str(stored), "notes": ""})
-    client["documents"]["requestStatus"] = "Partially Uploaded"
-    if client["documents"].get("items") and all(item.get("status") == "Uploaded" for item in client["documents"].get("items", [])):
-        client["documents"]["requestStatus"] = "Complete"
-        client["status"] = "Docs Received"
-    client["updatedAt"] = now_iso()
+    ok, message = _save_portal_document_upload(tenant_id, client, request.form.get("docName") or "Client document", request.files.get("document") or request.files.get("file"))
     save_db(db)
-    return portal_page("Document uploaded", f"<h1>Document uploaded</h1><div class='ok'>{html_escape(doc_name)} was uploaded successfully.</div><p>You may go back and upload another document using the same link.</p>"), 200, {"Content-Type": "text/html; charset=utf-8"}
+    return render_combined_client_portal(tenant_id, "documents", client_id, token, message, ok)
 
 
 @app.get("/portal/<tenant_id>/signature/<client_id>/<token>")
 def public_signature_page(tenant_id: str, client_id: str, token: str):
-    db, client, error = validate_public_link(tenant_id, "signature", client_id, token)
-    if error or not client:
-        return portal_error(error or "Invalid link")
-    body = f"""<h1>Confirm your signature authority</h1><p class='muted'>Client: {html_escape(client.get('fullName'))}</p><p>By clicking confirm, you acknowledge that you received the service documents/mandate and authorised the consultant/admin team to proceed with the selected service workflow.</p><form method='post'><label>Full name</label><input name='signerName' value='{html_escape(client.get('fullName'))}' required><label>South African ID number</label><input name='idNumber' value='{html_escape(client.get('idNumber'))}' required><label><input type='checkbox' name='accepted' value='yes' required style='width:auto'> I confirm and accept electronic signature/authority for this file.</label><p><button type='submit'>Confirm Signature</button></p></form>"""
-    return portal_page("Signature", body), 200, {"Content-Type": "text/html; charset=utf-8"}
+    return render_combined_client_portal(tenant_id, "signature", client_id, token)
 
 
 @app.post("/portal/<tenant_id>/signature/<client_id>/<token>")
@@ -3192,13 +3480,10 @@ def public_signature_submit(tenant_id: str, client_id: str, token: str):
     db, client, error = validate_public_link(tenant_id, "signature", client_id, token)
     if error or not db or not client:
         return portal_error(error or "Invalid link")
-    signer = request.form.get("signerName") or client.get("fullName")
-    client.setdefault("signature", {})
-    client["signature"].update({"status": "Signed", "signedAt": now_iso(), "signedBy": signer, "signedIp": request.remote_addr or ""})
-    client["updatedAt"] = now_iso()
+    ensure_client_workflow(client)
+    ok, message = _save_portal_signature(tenant_id, client, request.form.get("signerName") or client.get("fullName") or "", request.form.get("idNumber") or client.get("idNumber") or "", request.form.get("signatureData") or "")
     save_db(db)
-    return portal_page("Signature confirmed", f"<h1>Signature confirmed</h1><div class='ok'>Thank you, {html_escape(signer)}. Your signature status is now saved.</div>"), 200, {"Content-Type": "text/html; charset=utf-8"}
-
+    return render_combined_client_portal(tenant_id, "signature", client_id, token, message, ok)
 
 
 def render_split_nupay_page(tenant_id: str, mandate_type: str, client_id: str, token: str):
@@ -3328,15 +3613,15 @@ def portal_links_route():
     if not client:
         return jsonify({"success": False, "error": "Client not found in this tenant", "tenantId": tenant_id}), 404
     base_url = (payload.get("baseUrl") or request.host_url.rstrip("/") + "/portal").rstrip("/")
-    signature_link = create_secure_link("signature", tenant_id, client_id, base_url, client)
-    upload_link = create_secure_link("documents", tenant_id, client_id, base_url, client)
+    combined_link = create_secure_link("client-intake", tenant_id, client_id, base_url, client)
     links = {
-        "signatureLink": signature_link,
-        "uploadLink": upload_link,
+        "clientPortalLink": combined_link,
+        "signatureLink": combined_link,
+        "uploadLink": combined_link,
         "createdAt": now_iso(),
     }
-    client.setdefault("signature", {}).update({"link": signature_link, "status": "Sent", "sentAt": now_iso()})
-    client.setdefault("documents", {}).update({"uploadLink": upload_link, "requestStatus": "Sent", "sentAt": now_iso()})
+    client.setdefault("signature", {}).update({"link": combined_link, "status": "Sent", "sentAt": now_iso()})
+    client.setdefault("documents", {}).update({"uploadLink": combined_link, "requestStatus": "Sent", "sentAt": now_iso()})
     client["portalLinks"] = links
     client["updatedAt"] = now_iso()
     save_db(db)
@@ -3390,7 +3675,10 @@ def request_client_documents(client_id: str):
     base_url = (payload.get("baseUrl") or request.host_url.rstrip("/") + "/portal").rstrip("/")
     client["documents"]["requestStatus"] = "Sent"
     client["documents"]["sentAt"] = now_iso()
-    client["documents"]["uploadLink"] = create_secure_link("documents", tenant_id, client_id, base_url, client)
+    combined_link = create_secure_link("client-intake", tenant_id, client_id, base_url, client)
+    client["documents"]["uploadLink"] = combined_link
+    client.setdefault("signature", {}).update({"link": combined_link, "status": "Sent", "sentAt": now_iso()})
+    client.setdefault("portalLinks", {}).update({"clientPortalLink": combined_link, "uploadLink": combined_link, "signatureLink": combined_link, "createdAt": now_iso()})
     for item in client["documents"].get("items", []):
         if item.get("status") == "Missing":
             item["status"] = "Requested"
@@ -3448,7 +3736,10 @@ def send_signature_link(client_id: str):
     ensure_client_workflow(client)
     payload = request_json()
     base_url = (payload.get("baseUrl") or request.host_url.rstrip("/") + "/portal").rstrip("/")
-    client["signature"].update({"status": "Sent", "link": create_secure_link("signature", tenant_id, client_id, base_url, client), "sentAt": now_iso()})
+    combined_link = create_secure_link("client-intake", tenant_id, client_id, base_url, client)
+    client.setdefault("documents", {}).update({"uploadLink": combined_link, "requestStatus": "Sent", "sentAt": now_iso()})
+    client["signature"].update({"status": "Sent", "link": combined_link, "sentAt": now_iso()})
+    client.setdefault("portalLinks", {}).update({"clientPortalLink": combined_link, "uploadLink": combined_link, "signatureLink": combined_link, "createdAt": now_iso()})
     client["updatedAt"] = now_iso()
     save_db(db)
     return jsonify({"success": True, "tenantId": tenant_id, "client": client, "signature": client["signature"]})
@@ -3861,6 +4152,23 @@ def admin_clients():
 def debug_routes():
     routes = sorted(str(rule) for rule in app.url_map.iter_rules())
     return jsonify({"success": True, "routes": routes, "note": "All client, document, mandate, admin and PDA routes are tenant-scoped using X-Tenant-ID."})
+
+
+@app.get("/<path:path>")
+def serve_react_app(path: str):
+    """Serve Vite static files and fallback to React index for client-side routes."""
+    if path.startswith("api/"):
+        return jsonify({"success": False, "error": "Not found", "path": f"/{path}"}), 404
+
+    requested = FRONTEND_DIST / path
+    if FRONTEND_DIST.exists() and requested.exists() and requested.is_file():
+        return send_from_directory(FRONTEND_DIST, path)
+
+    index_file = FRONTEND_DIST / "index.html"
+    if index_file.exists():
+        return send_from_directory(FRONTEND_DIST, "index.html")
+
+    return jsonify({"success": True, "app": APP_NAME, "version": APP_VERSION, "isolation": "X-Tenant-ID scoped", "frontend": "not built"})
 
 
 if __name__ == "__main__":

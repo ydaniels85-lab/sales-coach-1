@@ -1,40 +1,34 @@
-# Node 24 LTS avoids the npm 10.9.x / Node 22 Docker "Exit handler never called" failure.
-FROM node:24-bookworm-slim AS frontend-build
-
-ENV NPM_CONFIG_REGISTRY=https://registry.npmjs.org/ \
-    NPM_CONFIG_AUDIT=false \
-    NPM_CONFIG_FUND=false \
-    NPM_CONFIG_UPDATE_NOTIFIER=false \
-    NPM_CONFIG_PROGRESS=false
-
-WORKDIR /build/frontend
-
-# Intentionally copy only package.json. The supplied lockfile was generated
-# against a private build registry, so Railway must not use it.
-COPY frontend/package.json ./package.json
-RUN npm install --include=dev --no-audit --no-fund --foreground-scripts
-
-COPY frontend/index.html ./index.html
-COPY frontend/tsconfig.json ./tsconfig.json
-COPY frontend/vite.config.ts ./vite.config.ts
-COPY frontend/src ./src
-RUN npm run build
-
 FROM python:3.12-slim
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    FINTASTIC_DATA_DIR=/app/data \
-    FINTASTIC_UPLOAD_DIR=/app/data/uploads
+    PORT=10000
 
 WORKDIR /app
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends tesseract-ocr libgomp1 \
-    && rm -rf /var/lib/apt/lists/*
-COPY backend/requirements.txt ./requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
-COPY backend/app.py ./app.py
-COPY --from=frontend-build /build/frontend/dist ./frontend_dist
-RUN mkdir -p /app/data/uploads
 
-EXPOSE 8080
-CMD ["sh", "-c", "gunicorn app:app --bind 0.0.0.0:${PORT:-8080} --workers 1 --threads 4 --timeout 300"]
+# Tesseract is needed for scanned/image-only Datanamix reports.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl ca-certificates nodejs npm tesseract-ocr \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY backend/requirements.txt /app/backend/requirements.txt
+RUN pip install --root-user-action=ignore --no-cache-dir --upgrade pip \
+    && pip install --root-user-action=ignore --no-cache-dir -r /app/backend/requirements.txt
+
+COPY frontend/package.json /app/frontend/package.json
+WORKDIR /app/frontend
+RUN npm config set registry https://registry.npmjs.org/ \
+    && npm config delete proxy || true \
+    && npm config delete https-proxy || true \
+    && npm install --registry=https://registry.npmjs.org/ --package-lock=false --no-audit --no-fund --fetch-retries=5 --fetch-timeout=600000
+
+COPY frontend /app/frontend
+RUN npm run build
+
+COPY backend /app/backend
+RUN mkdir -p /app/backend/frontend_dist \
+    && cp -r /app/frontend/dist/* /app/backend/frontend_dist/
+
+WORKDIR /app/backend
+EXPOSE 10000
+CMD ["sh", "-c", "python -m gunicorn --bind 0.0.0.0:${PORT:-10000} --workers 1 --timeout 180 app:app"]

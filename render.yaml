@@ -1,41 +1,23 @@
 services:
   - type: web
-    name: fin-tastic-render
+    name: fin-tastic-sales-coach
     runtime: docker
-    plan: starter
-    region: frankfurt
     dockerfilePath: ./Dockerfile
     dockerContext: .
     healthCheckPath: /api/health
     autoDeployTrigger: commit
     envVars:
-      - key: DATABASE_URL
-        fromDatabase:
-          name: fin-tastic-postgres
-          property: connectionString
-      - key: OWNER_EMAIL
-        value: ydaniels85@gmail.com
-      - key: DEFAULT_TENANT_ID
-        value: khusela-debt-management
-      - key: DEFAULT_TENANT_NAME
-        value: Khusela Debt Management
-      - key: DEFAULT_CREDIT_REPORT_PDF_PASSWORD
-        sync: false
-      - key: OPEN_ACCESS_OPERATOR_ID
-        value: open-access
-      - key: WEB_CONCURRENCY
-        value: "2"
-      - key: GUNICORN_THREADS
-        value: "4"
-      - key: GUNICORN_TIMEOUT
-        value: "180"
-      - key: CORS_ORIGINS
-        value: http://localhost:5173
-
-databases:
-  - name: fin-tastic-postgres
-    databaseName: fintastic
-    user: fintastic_app
-    plan: basic-256mb
-    region: frankfurt
-    ipAllowList: []
+      - key: PORT
+        value: 10000
+      - key: FLASK_DEBUG
+        value: "0"
+      - key: DATA_DIR
+        value: /var/data/data
+      - key: UPLOAD_DIR
+        value: /var/data/uploads
+      - key: PYTHONUNBUFFERED
+        value: "1"
+    disk:
+      name: fin-tastic-data
+      mountPath: /var/data
+      sizeGB: 1
