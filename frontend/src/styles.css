@@ -225,3 +225,29 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .session-chip span { border: 1px solid var(--line); background: #f8fafc; border-radius: 12px; padding: 8px 11px; font-size: 12px; color: #334155; }
 .upload-mode-panel { display: grid; gap: 10px; border: 1px solid #bfdbfe; background: #eff6ff; border-radius: 18px; padding: 14px; margin: 14px 0; }
 .upload-mode-panel small { color: #1e40af; font-weight: 700; }
+
+/* Full consultant conversation coach */
+.script-card blockquote,
+.panel-card blockquote {
+  margin: 14px 0;
+  padding: 16px 18px;
+  border-left: 4px solid var(--primary);
+  border-radius: 12px;
+  background: #f0fdfa;
+  color: #134e4a;
+  font-weight: 700;
+  line-height: 1.65;
+}
+.script-line { padding: 12px 14px; border-radius: 12px; background: #eff6ff; color: #1e3a8a; font-weight: 700; }
+.conversation-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
+.conversation-step { border: 1px solid var(--line); border-radius: 16px; padding: 15px; background: var(--soft); display: grid; gap: 8px; }
+.conversation-step strong { color: var(--primary-dark); }
+.conversation-step span { color: var(--muted); font-size: 13px; font-weight: 750; }
+.conversation-step p { margin: 0; color: #1e293b; line-height: 1.55; }
+.objection-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
+.objection-card { border: 1px solid #fed7aa; border-radius: 16px; padding: 16px; background: #fff7ed; }
+.objection-card h4 { margin: 0 0 10px; color: #9a3412; }
+.objection-card p { margin: 8px 0; line-height: 1.55; }
+.objection-card .follow-up { padding-top: 8px; border-top: 1px solid #fed7aa; color: #7c2d12; }
+.compliance-card { border-color: #fbbf24; background: #fffbeb; }
+.owner-card { border-color: #a5b4fc; background: #eef2ff; }

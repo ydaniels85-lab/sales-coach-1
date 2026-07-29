@@ -5,7 +5,7 @@ type ServiceType = 'Debt Review Sales Coach' | 'Debt Review Removal' | 'Debt Med
 type Urgency = 'Low' | 'Medium' | 'High';
 
 type Tenant = { id: string; name: string; ncr: string; userCount: number; clientCount: number };
-type TenantUser = { id: string; name: string; role: string; email: string };
+type TenantUser = { id: string; name: string; role: string; email: string; isActive?: boolean; isPlatformOwner?: boolean };
 
 type Applicant = {
   firstName: string;
@@ -59,6 +59,9 @@ type DebtAccount = {
   rawLine?: string;
 };
 
+type CoachConversationStep = { stage: string; objective: string; script: string };
+type CoachObjection = { objection: string; response: string; followUp: string };
+
 type CoachResult = {
   service: ServiceType;
   urgency: Urgency;
@@ -66,6 +69,14 @@ type CoachResult = {
   reasons: string[];
   nextSteps: string[];
   objectionHandlers: string[];
+  callOpening: string;
+  permissionQuestion: string;
+  discoveryQuestions: string[];
+  conversationGuide: CoachConversationStep[];
+  valuePoints: string[];
+  objections: CoachObjection[];
+  closingScript: string;
+  complianceReminders: string[];
   totals: {
     outstanding: number;
     arrears: number;
@@ -127,6 +138,7 @@ type ParseResult = {
   coach?: CoachResult;
   clients?: Client[];
   error?: string;
+  parserDebug?: { bureau?: string; textLength?: number; ocrAvailable?: boolean; ocrUsed?: boolean; datanamixSubscriberBlocks?: number; accountCount?: number };
 };
 
 const drrFee = 7000;
@@ -157,8 +169,16 @@ const emptyCoach = (): CoachResult => ({
   urgency: 'Low',
   headline: 'Create or select a client',
   reasons: ['Add a client or upload a credit report to generate the sales route.'],
-  nextSteps: ['Open the client list, select a tenant, and start with a new client or upload a report.'],
+  nextSteps: ['Verify the report and affordability information before recommending a product.'],
   objectionHandlers: [],
+  callOpening: 'Good day. My name is [consultant name] from [company]. I would like to verify a few details before recommending any service. Is this a good time?',
+  permissionQuestion: 'May I confirm your current debts, affordability and debt-review status?',
+  discoveryQuestions: ['Have you ever been under debt review?', 'Which payments are currently placing you under pressure?', 'What is your verified nett income and essential expenditure?'],
+  conversationGuide: [{ stage: 'Verify first', objective: 'Collect reliable facts.', script: 'Do not recommend a product until the report and affordability details are confirmed.' }],
+  valuePoints: ['A fact-based recommendation instead of a generic sale.'],
+  objections: [],
+  closingScript: 'Let us complete the missing information first, and then I can give you a clear recommendation.',
+  complianceReminders: ['Do not guarantee an outcome or present unverified parser figures as final.'],
   totals: { outstanding: 0, arrears: 0, originalInstalment: 0, reducedInstalment: 0, estimatedRelief: 0 },
   flags: { debtReviewListed: false, hasAsset: false, hasFurniture: false, scoreZeroRule: false, doubleSaleCandidate: false }
 });
@@ -274,70 +294,140 @@ function evaluateCoach(client: Client, accounts: DebtAccount[]): CoachResult {
   const arrears = included.reduce((sum, account) => sum + toNumber(account.arrears), 0);
   const originalInstalment = included.reduce((sum, account) => sum + toNumber(account.monthlyInstallment), 0);
   const reducedInstalment = included.reduce((sum, account) => sum + toNumber(account.reducedAmount), 0);
+  const estimatedRelief = Math.max(0, originalInstalment - reducedInstalment);
   const hasAsset = included.some((account) => account.isAsset || /vehicle|home loan|bond|mortgage|wesbank|mfc/i.test(account.creditorName));
   const hasFurniture = included.some((account) => account.isFurniture || /russells|bradlows|lewis|furniture|beares|jd/i.test(account.creditorName));
   const scoreIsKnown = Boolean(client.scoreFound) && client.creditScore !== null && client.creditScore !== undefined && String(client.creditScore) !== '';
   const numericScore = scoreIsKnown ? Number(client.creditScore) : null;
   const scoreZeroRule = scoreIsKnown && numericScore === 0;
   const debtReviewListed = Boolean(client.debtReviewListed || scoreZeroRule);
+  const firstName = (client.firstName || client.fullName || 'the client').trim().split(/\s+/)[0];
 
   let service: ServiceType = 'Debt Mediation';
   let urgency: Urgency = 'Medium';
   let headline = 'Debt mediation opportunity detected';
   const reasons: string[] = [];
   let nextSteps: string[] = [];
-  let objectionHandlers: string[] = [];
+  let callOpening = '';
+  let permissionQuestion = '';
+  let discoveryQuestions: string[] = [];
+  let conversationGuide: CoachConversationStep[] = [];
+  let valuePoints: string[] = [];
+  let objections: CoachObjection[] = [];
+  let closingScript = '';
 
   if (debtReviewListed) {
     service = 'Debt Review Removal';
     urgency = 'High';
     headline = 'Debt Review Removal lead';
-    reasons.push('The report indicates a debt-review flag or score-zero rule, so DR removal must be checked first.');
-    if (outstanding > 0) reasons.push('Balances still show on the report, so this can become a double sale: removal plus mediation.');
+    reasons.push('The report indicates a confirmed debt-review flag or a genuinely detected score of zero, so removal must be assessed first.');
+    if (outstanding > 0) reasons.push('Balances still show, creating a possible second sale for mediation after the removal assessment.');
   } else if (hasAsset) {
     service = 'Debt Review Sales Coach';
     urgency = 'High';
     headline = 'Asset-protection opportunity';
-    reasons.push('Home loan or vehicle finance style accounts were detected. Lead with protecting the client’s asset.');
+    reasons.push('A home-loan or vehicle-finance type account was detected. Lead with affordability and protecting the asset, subject to eligibility.');
   } else if (scoreIsKnown && numericScore !== null && numericScore >= 400 && numericScore <= 650 && arrears > 0) {
     service = 'Debt Mediation';
     urgency = 'High';
     headline = 'Debt mediation lead with arrears pressure';
-    reasons.push('The score and arrears pattern suggest the client needs urgent affordability relief.');
+    reasons.push('The score and arrears pattern indicate immediate affordability pressure that may benefit from negotiated relief.');
   } else if (outstanding > 0) {
     service = 'Debt Mediation';
-    urgency = 'Medium';
-    headline = 'Debt mediation lead';
-    reasons.push('Outstanding balances are present and can be negotiated into a structured repayment plan.');
+    reasons.push('Outstanding balances are present and can be assessed for a coordinated, affordable repayment proposal.');
   } else {
     service = 'Needs Manual Review';
     urgency = 'Low';
     headline = 'Manual assessment needed';
-    reasons.push('The current data does not show enough debt to recommend a sale safely.');
+    reasons.push('The available report data is not sufficient to recommend a product safely.');
   }
 
-  if (hasFurniture) reasons.push('Furniture accounts detected. Tag them because clients often ask whether household goods are at risk.');
-  if (originalInstalment > 0) reasons.push(`Estimated instalment relief is ${currency(Math.max(0, originalInstalment - reducedInstalment))} before final affordability checks.`);
+  if (hasFurniture) reasons.push('Furniture accounts were detected. Confirm the status of the goods and explain the account clearly.');
+  if (originalInstalment > 0) reasons.push(`The working proposal shows estimated monthly relief of ${currency(estimatedRelief)}, subject to affordability checks and creditor acceptance.`);
 
   if (service === 'Debt Review Removal') {
-    nextSteps = ['Confirm if the client is actively under debt review or only still bureau-flagged.', 'Request ID, proof of address, latest payslip/bank statement, and existing NCT/court documents.', 'Explain the R7,000 removal fee and offer 1-3 months.', 'If balances remain, present mediation as the second sale.'];
-    objectionHandlers = ['I already paid my debt counsellor: explain that payment history and current flag status still need to be verified.', 'I only want my name cleared: explain removal is step one; active balances may still affect score recovery.'];
+    nextSteps = ['Confirm whether the client is actively under debt review or only remains bureau-listed.', 'Request Form 17 documents, court/NCT order, PDA statement and paid-up evidence.', 'Explain the R7,000 fee and 1-3 month options without promising an outcome.', 'Assess mediation separately if active balances remain.'];
+    callOpening = `Good day ${firstName}. My name is [consultant name] from [company]. I have reviewed the credit report information available to us, and it appears that a debt-review indicator may still be affecting the profile. I would like to ask a few questions to establish whether the listing is still active and what the correct removal process would be. Is this a good time to continue?`;
+    permissionQuestion = 'Before I explain the process, may I confirm what happened with the previous debt-review matter and what result you are hoping to achieve now?';
+    discoveryQuestions = ['Are you still paying through a debt counsellor or PDA?', 'Did you receive a court order, NCT order, Form 17.2 or clearance certificate?', 'Are all accounts paid up, or do balances remain?', 'When did you last speak to the debt counsellor?', 'Have you tried to remove the listing before?', 'Why do you need the listing addressed now?'];
+    conversationGuide = [
+      { stage: '1. Confirm the problem', objective: 'Separate an active process from a lingering bureau listing.', script: 'I want to separate the bureau listing from any active balances, because each issue may require a different solution.' },
+      { stage: '2. Explain the route', objective: 'Explain the assessment and document process honestly.', script: 'We first verify the status and documents, then determine the appropriate removal route. No outcome can be guaranteed before assessment.' },
+      { stage: '3. Present the service', objective: 'Connect the service to the client’s stated goal.', script: 'Based on what you have told me, the next practical step is a formal removal assessment and document collection.' },
+      { stage: '4. Confirm affordability', objective: 'Discuss the fee and payment options.', script: 'The service fee is R7,000, payable once off or over up to three months. Which structure is realistic for you?' },
+      { stage: '5. Secure the next action', objective: 'Obtain consent, documents and mandate.', script: 'I can send one secure link for the required documents and signature so we can begin the assessment.' }
+    ];
+    valuePoints = ['Structured assessment of the current debt-review status.', 'Guidance for bureau, debt counsellor, PDA, NCT or court documents.', 'Clear separation between removal and remaining debt.', 'Progress tracking through the admin workflow.'];
+    objections = [
+      { objection: 'I already paid my debt counsellor.', response: 'Payment may support the matter, but it does not confirm that the bureau indicator was removed. We still need to verify the status and evidence.', followUp: 'Do you have a clearance certificate, paid-up letters or final PDA statement?' },
+      { objection: 'I only want my name cleared.', response: 'That is the objective of the assessment. Active balances must still be explained because removing an indicator does not erase valid debt.', followUp: 'May I show you which accounts still have balances?' },
+      { objection: 'Why does it cost R7,000?', response: 'The fee covers investigation, document preparation, communication and the applicable workflow. It is not a payment to guarantee a result.', followUp: 'Would once off, two months or three months suit you better?' },
+      { objection: 'Another company can do it immediately.', response: 'A responsible provider must first verify the legal and bureau status. Immediate removal cannot be promised without the facts and documents.', followUp: 'Would you like me to explain exactly what must be verified?' },
+      { objection: 'I need to think about it.', response: 'That is understandable. Let us make sure the status, documents, fee and route are clear so your decision is informed.', followUp: 'Which part do you need more clarity on?' },
+      { objection: 'I cannot afford the fee now.', response: 'A payment arrangement of up to three months can be considered if it is genuinely affordable.', followUp: 'What monthly amount would be realistic without adding pressure?' }
+    ];
+    closingScript = 'From what we have confirmed, the appropriate next step is the removal assessment. I will send the secure signature and document link, and we will only proceed once you understand the service, fee and required evidence. Shall we complete that now?';
   } else if (service === 'Debt Review Sales Coach') {
-    nextSteps = ['Confirm income, expenses, and whether the client is behind on home/vehicle payments.', 'Position the call around protecting the asset and creating a sustainable plan.', 'Prepare Form 16, consent, credit report, and COB workflow if the client qualifies.'];
-    objectionHandlers = ['I do not want debt review: explain that assets at risk need urgent protection and eligibility must be assessed first.', 'I can catch up next month: compare arrears and instalments against nett income before accepting that answer.'];
+    nextSteps = ['Confirm income, living expenses, arrears and the status of the home or vehicle account.', 'Explain debt review as an affordability and asset-protection process, subject to eligibility.', 'Complete the budget and consent before Form 16, notices and COB requests.'];
+    callOpening = `Good day ${firstName}. My name is [consultant name] from [company]. The report shows a home-loan or vehicle-finance type account, so I would like to understand whether the current repayments are placing the asset under pressure. My role is to assess the affordability problem and explain the available regulated options. Is this a good time to ask a few questions?`;
+    permissionQuestion = 'May I first understand what changed in your finances and which payment is causing the most pressure?';
+    discoveryQuestions = ['Are the home or vehicle payments up to date?', 'Have you received a demand, summons, cancellation or repossession warning?', 'What is the current nett household income?', 'What essential living expenses must be protected?', 'Which creditor payment is most difficult?', 'Have you previously applied for debt review?'];
+    conversationGuide = [
+      { stage: '1. Identify the pressure', objective: 'Understand the trigger and urgency.', script: 'Let us identify the payment that is no longer sustainable and whether the asset is already at risk.' },
+      { stage: '2. Complete affordability', objective: 'Use verified income and expenses.', script: 'I need the full household budget so any recommendation is based on what you can genuinely afford.' },
+      { stage: '3. Explain debt review', objective: 'Explain the regulated process without fear-based selling.', script: 'Debt review can restructure qualifying obligations and may assist with asset protection while the consumer complies, but eligibility and timelines must be assessed.' },
+      { stage: '4. Show working relief', objective: 'Compare current and proposed amounts.', script: `The included instalments total about ${currency(originalInstalment)}; the working proposal is about ${currency(reducedInstalment)}, subject to the formal process.` },
+      { stage: '5. Obtain informed consent', objective: 'Secure the next action.', script: 'If the option is suitable, the next step is consent, documents and the full affordability application.' }
+    ];
+    valuePoints = ['One affordability assessment across included credit agreements.', 'A regulated process with notices, balances and a formal proposal.', 'Focus on sustainable living expenses and qualifying asset protection.', 'Documented admin and PDA handover.'];
+    objections = [
+      { objection: 'I do not want debt review.', response: 'I understand. My role is to assess whether the current payments are sustainable and explain the consequences and alternatives accurately, not to force the option.', followUp: 'What concerns you most about debt review?' },
+      { objection: 'I can catch up next month.', response: 'That may be possible, but we should compare the arrears and instalments with actual disposable income before relying on that plan.', followUp: 'After essential expenses, how much is genuinely available next month?' },
+      { objection: 'Will I lose my car or house?', response: 'No honest adviser can give a blanket guarantee. Risk depends on account status, legal action and compliance. Early assessment is important.', followUp: 'Have you received any formal enforcement notice?' },
+      { objection: 'Will I be blacklisted?', response: 'Debt review is reflected while active and access to new credit is restricted. The aim is rehabilitation through an affordable plan.', followUp: 'Is the priority new credit, or stabilising existing obligations?' },
+      { objection: 'I need another loan instead.', response: 'More borrowing may increase pressure. We should first establish whether the current debt is already unaffordable.', followUp: 'Can we review the budget before adding another repayment?' },
+      { objection: 'I need to speak to my spouse.', response: 'That is appropriate, especially for a joint household or marriage in community of property. We can explain it to both applicants.', followUp: 'When can we arrange a call with both of you?' }
+    ];
+    closingScript = 'The information suggests that a full affordability assessment is the responsible next step. I will send the consent and document link so the figures can be verified before any formal recommendation. Shall we start with that assessment?';
   } else if (service === 'Debt Mediation') {
-    nextSteps = ['Confirm all income and debit orders before making a proposal.', 'Use included accounts only and adjust reduced amounts where affordability changes.', 'Send mediation mandate and upload-documents link before contacting creditors.'];
-    objectionHandlers = ['I can pay creditors myself: explain that one coordinated proposal can reduce pressure.', 'I am not in arrears yet: explain mediation can prevent arrears if affordability is already strained.'];
+    nextSteps = ['Confirm all income, living expenses, debit orders and creditor payments.', 'Agree included accounts and realistic reduced amounts.', 'Explain creditor acceptance and send the mediation mandate and document link.'];
+    callOpening = `Good day ${firstName}. My name is [consultant name] from [company]. The report shows active balances that may be placing the monthly budget under pressure. I would like to understand the affordability gap and explain how a coordinated creditor proposal could work. Is this a good time to continue?`;
+    permissionQuestion = 'May I ask what you are currently paying, what you can realistically afford, and what caused the pressure?';
+    discoveryQuestions = ['Which accounts are in arrears or likely to fall behind?', 'What is your verified nett income and salary date?', 'What are the essential living expenses?', 'Are there deductions not shown on the report?', 'Have creditors offered arrangements?', 'What total debt payment can you maintain?'];
+    conversationGuide = [
+      { stage: '1. Understand the shortfall', objective: 'Identify why payments are not sustainable.', script: 'Let us compare the full creditor commitment with what remains after essential expenses.' },
+      { stage: '2. Prioritise accounts', objective: 'Confirm negotiation and legal urgency.', script: 'We will review every included creditor, arrears status and enforcement communication.' },
+      { stage: '3. Build the proposal', objective: 'Create a realistic working amount.', script: `Current instalments total about ${currency(originalInstalment)}; the working reduced total is ${currency(reducedInstalment)}, subject to confirmation and acceptance.` },
+      { stage: '4. Explain expectations', objective: 'Avoid implying guaranteed acceptance.', script: 'Creditors may accept, counter or decline. The client must maintain agreed payments and keep information current.' },
+      { stage: '5. Secure the mandate', objective: 'Obtain authority and documents.', script: 'Once the mandate and documents are complete, the admin team can begin the creditor process.' }
+    ];
+    valuePoints = ['One coordinated view of included creditor payments.', 'A proposal based on verified affordability.', 'Centralised communication and progress tracking.', 'Clear payment and mandate records.'];
+    objections = [
+      { objection: 'I can pay creditors myself.', response: 'You may. Mediation is useful when separate arrangements are difficult to coordinate or the total remains unaffordable.', followUp: 'Have the arrangements reduced the total to a sustainable amount?' },
+      { objection: 'I am not in arrears yet.', response: 'Acting early can prevent missed promises if the budget already shows a shortfall.', followUp: 'After essential expenses, can every contractual instalment be paid this month?' },
+      { objection: 'Can you guarantee lower payments?', response: 'No. We can prepare and motivate a proposal, but creditors must consider it.', followUp: 'Would you like to review the working amount and assumptions?' },
+      { objection: 'Do not contact my creditors.', response: 'No contact should occur without informed authority. We explain the mandate before it is signed.', followUp: 'Which part of creditor communication concerns you?' },
+      { objection: 'I need more time.', response: 'That is fair, but arrears, fees or legal action may continue, so set a specific follow-up date.', followUp: 'What information do you need, and when should we speak again?' },
+      { objection: 'The payment is still too high.', response: 'Then we should not proceed with an unrealistic figure. Recheck the budget and included accounts.', followUp: 'Which verified expense or income item is missing?' }
+    ];
+    closingScript = 'The next step is to confirm the budget and obtain your mandate so the proposal can be prepared accurately. This does not guarantee creditor acceptance, but it gives authority to begin the structured process. Shall I send the secure link now?';
+  } else {
+    nextSteps = ['Verify the report and capture missing client, income and account details.', 'Do not recommend a service until debt-review status, balances and affordability are confirmed.'];
+    callOpening = `Good day ${firstName}. My name is [consultant name] from [company]. I do not yet have enough reliable information to recommend a service, so I would like to verify a few details first. Is this a good time?`;
+    permissionQuestion = 'May I confirm your current debts, income, arrears and whether you have ever been under debt review?';
+    discoveryQuestions = ['Have you ever applied for debt review?', 'Which accounts are active?', 'Are any accounts in arrears or legal collections?', 'What is your nett income and essential expenditure?', 'Do you have a financed home or vehicle?'];
+    conversationGuide = [{ stage: '1. Verify', objective: 'Correct missing or unreliable data.', script: 'I first need to verify the report and affordability information.' }, { stage: '2. Classify', objective: 'Identify DR status, assets, balances and arrears.', script: 'Once the facts are confirmed, I can explain which service, if any, is appropriate.' }];
+    valuePoints = ['A fact-based recommendation instead of a generic sale.', 'Protection against selecting the wrong service.'];
+    objections = [{ objection: 'Just tell me what I qualify for.', response: 'Reliable status, balance and affordability information is needed to avoid recommending the wrong process.', followUp: 'Can we complete the missing questions first?' }];
+    closingScript = 'Let us complete the missing information first. Once verified, I can give you a clear and responsible recommendation.';
   }
 
+  const objectionHandlers = objections.map((item) => `${item.objection}: ${item.response}`);
+  const complianceReminders = ['Do not guarantee removal, creditor acceptance, asset protection, clearance or a score outcome.', 'Correct parser errors before presenting figures.', 'Obtain informed consent before documents, mandates or creditor contact.', 'Explain fees, exclusions, timelines and separate services clearly.'];
   return {
-    service,
-    urgency,
-    headline,
-    reasons,
-    nextSteps,
-    objectionHandlers,
-    totals: { outstanding, arrears, originalInstalment, reducedInstalment, estimatedRelief: Math.max(0, originalInstalment - reducedInstalment) },
+    service, urgency, headline, reasons, nextSteps, objectionHandlers,
+    callOpening, permissionQuestion, discoveryQuestions, conversationGuide, valuePoints, objections, closingScript, complianceReminders,
+    totals: { outstanding, arrears, originalInstalment, reducedInstalment, estimatedRelief },
     flags: { debtReviewListed, hasAsset, hasFurniture, scoreZeroRule, doubleSaleCandidate: debtReviewListed && outstanding > 0 }
   };
 }
@@ -365,14 +455,23 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
+
+const apiRequest = (input: RequestInfo | URL, init: RequestInit = {}) =>
+  window.fetch(input, { ...init, credentials: 'include' });
+
 export default function App() {
   const defaultApiBase = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:5000' : window.location.origin;
   const [apiBase, setApiBase] = useState(() => localStorage.getItem('fintastic_sales_api') || defaultApiBase);
-  const [loggedIn, setLoggedIn] = useState(() => localStorage.getItem('fintastic_logged_in') === '1');
+  const [loggedIn, setLoggedIn] = useState(false);
+  const [sessionChecking, setSessionChecking] = useState(true);
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const [sessionUser, setSessionUser] = useState<TenantUser | null>(null);
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [tenantId, setTenantId] = useState(() => localStorage.getItem('fintastic_tenant_id') || 'liberty-credit-specialists');
   const [users, setUsers] = useState<TenantUser[]>([]);
-  const [userId, setUserId] = useState(() => localStorage.getItem('fintastic_user_id') || 'lib-agent-1');
+  const [userId, setUserId] = useState('');
   const [clients, setClients] = useState<Client[]>([]);
   const [client, setClient] = useState<Client>(() => newLocalClient(tenantId, userId));
   const [searchText, setSearchText] = useState('');
@@ -391,15 +490,19 @@ export default function App() {
   const [adminClients, setAdminClients] = useState<Client[]>([]);
   const [handoverNotes, setHandoverNotes] = useState('');
   const [docUploadName, setDocUploadName] = useState('ID copy');
-  const [tenantForm, setTenantForm] = useState({ name: '', ncr: '', adminName: '', adminEmail: '' });
+  const [tenantForm, setTenantForm] = useState({ name: '', ncr: '', adminName: '', adminEmail: '', adminPassword: '' });
   const [tenantCreateMessage, setTenantCreateMessage] = useState('');
   const [creatingTenant, setCreatingTenant] = useState(false);
+  const [userForm, setUserForm] = useState({ tenantId, name: '', email: '', password: '', role: 'Consultant' });
+  const [userCreateMessage, setUserCreateMessage] = useState('');
+  const [creatingUser, setCreatingUser] = useState(false);
 
   const accounts = client.accounts || [];
   const coach = useMemo(() => evaluateCoach(client, accounts), [client, accounts]);
   const currentTenant = tenants.find((tenant) => tenant.id === tenantId);
-  const currentUser = users.find((user) => user.id === userId);
-  const isAdminRole = ['Admin', 'Manager'].includes(currentUser?.role || '');
+  const currentUser = sessionUser;
+  const isPlatformOwner = Boolean(currentUser?.isPlatformOwner);
+  const isAdminRole = isPlatformOwner || ['Admin', 'Manager'].includes(currentUser?.role || '');
 
   const quickTabs: { key: ViewKey; label: string; helper: string }[] = [
     { key: 'profile', label: 'Client Info', helper: 'Details + joint' },
@@ -411,18 +514,16 @@ export default function App() {
     { key: 'workflow', label: 'Admin / PDA', helper: 'Submit handover' }
   ];
 
-  const apiHeaders = { 'Content-Type': 'application/json', 'X-Tenant-ID': tenantId, 'X-User-ID': userId };
+  const apiHeaders = { 'Content-Type': 'application/json', 'X-Tenant-ID': tenantId };
 
   const loadTenants = async () => {
     try {
-      const response = await fetch(`${apiBase}/api/tenants`);
+      const response = await apiRequest(`${apiBase}/api/tenants`);
       const data = await response.json();
       if (data.success) setTenants(data.tenants || []);
-    } catch {
-      setTenants([
-        { id: 'liberty-credit-specialists', name: 'Liberty Credit Specialists', ncr: 'NCRDC-1829', userCount: 3, clientCount: clients.length },
-        { id: 'apex-debt-solutions', name: 'Apex Debt Solutions', ncr: 'NCRDC-2491', userCount: 2, clientCount: 0 }
-      ]);
+    } catch (error) {
+      console.warn(error);
+      setTenants([]);
     }
   };
 
@@ -431,22 +532,16 @@ export default function App() {
     setCreatingTenant(true);
     setTenantCreateMessage('');
     try {
-      const response = await fetch(`${apiBase}/api/tenants`, {
+      const response = await apiRequest(`${apiBase}/api/tenants`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-Tenant-ID': tenantId },
         body: JSON.stringify(tenantForm)
       });
       const data = await response.json();
       if (!response.ok || !data.success) throw new Error(data.error || 'Could not create tenant');
       setTenants(data.tenants || []);
-      setTenantId(data.tenant.id);
-      setUserId(data.user.id);
-      localStorage.setItem('fintastic_tenant_id', data.tenant.id);
-      localStorage.setItem('fintastic_user_id', data.user.id);
-      setTenantForm({ name: '', ncr: '', adminName: '', adminEmail: '' });
-      setTenantCreateMessage(`${data.tenant.name} created successfully.`);
-      await loadUsers(data.tenant.id);
-      await loadClients('', data.tenant.id);
+      setTenantForm({ name: '', ncr: '', adminName: '', adminEmail: '', adminPassword: '' });
+      setTenantCreateMessage(`${data.tenant.name} created successfully. You remain signed in as platform owner.`);
     } catch (error) {
       setTenantCreateMessage(error instanceof Error ? error.message : 'Could not create tenant');
     } finally {
@@ -454,13 +549,35 @@ export default function App() {
     }
   };
 
+  const createUser = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setCreatingUser(true);
+    setUserCreateMessage('');
+    try {
+      const response = await apiRequest(`${apiBase}/api/users`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Tenant-ID': userForm.tenantId },
+        body: JSON.stringify({ name: userForm.name, email: userForm.email, password: userForm.password, role: userForm.role })
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.error || 'Could not create user');
+      setUserForm((current) => ({ ...current, name: '', email: '', password: '', role: 'Consultant' }));
+      setUserCreateMessage(`${data.user.name} ${data.activatedLegacyUser ? 'was activated' : 'was created'} in ${tenants.find((item) => item.id === userForm.tenantId)?.name || userForm.tenantId}.`);
+      await loadTenants();
+      if (userForm.tenantId === tenantId) await loadUsers(tenantId);
+    } catch (error) {
+      setUserCreateMessage(error instanceof Error ? error.message : 'Could not create user');
+    } finally {
+      setCreatingUser(false);
+    }
+  };
+
   const loadUsers = async (nextTenantId = tenantId) => {
     try {
-      const response = await fetch(`${apiBase}/api/users`, { headers: { 'X-Tenant-ID': nextTenantId, 'X-User-ID': userId } });
+      const response = await apiRequest(`${apiBase}/api/users`, { headers: { 'X-Tenant-ID': nextTenantId } });
       const data = await response.json();
       if (data.success) {
         setUsers(data.users || []);
-        if (!data.users?.some((user: TenantUser) => user.id === userId) && data.users?.[0]) setUserId(data.users[0].id);
       }
     } catch {
       setUsers([]);
@@ -473,7 +590,7 @@ export default function App() {
     if (serviceFilter) params.set('service', serviceFilter);
     if (statusFilter) params.set('status', statusFilter);
     try {
-      const response = await fetch(`${apiBase}/api/clients?${params.toString()}`, { headers: { 'X-Tenant-ID': nextTenantId, 'X-User-ID': userId } });
+      const response = await apiRequest(`${apiBase}/api/clients?${params.toString()}`, { headers: { 'X-Tenant-ID': nextTenantId } });
       const data = await response.json();
       if (!response.ok || !data.success) throw new Error(data.error || 'Could not load clients');
       const loadedClients = (data.clients || []).map((item: Client) => withWorkflowDefaults(item));
@@ -490,21 +607,35 @@ export default function App() {
   };
 
   useEffect(() => {
-    loadTenants();
+    const restoreSession = async () => {
+      try {
+        const response = await apiRequest(`${apiBase}/api/me`);
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.error || 'Session expired');
+        setSessionUser(data.user);
+        setUserId(data.user.id);
+        setTenantId(data.tenant.id);
+        setLoggedIn(true);
+        await Promise.all([loadTenants(), loadUsers(data.tenant.id), loadClients('', data.tenant.id)]);
+      } catch {
+        setLoggedIn(false);
+        setSessionUser(null);
+      } finally {
+        setSessionChecking(false);
+      }
+    };
+    restoreSession();
   }, []);
 
   useEffect(() => {
+    if (!loggedIn) return;
     localStorage.setItem('fintastic_tenant_id', tenantId);
-    localStorage.setItem('fintastic_user_id', userId);
     loadUsers(tenantId);
     loadClients('', tenantId);
-  }, [tenantId]);
+  }, [tenantId, loggedIn]);
 
   useEffect(() => {
-    localStorage.setItem('fintastic_user_id', userId);
-  }, [userId]);
-
-  useEffect(() => {
+    if (!loggedIn) return;
     const timer = window.setTimeout(() => loadClients(searchText), 250);
     return () => window.clearTimeout(timer);
   }, [searchText, serviceFilter, statusFilter]);
@@ -613,7 +744,7 @@ export default function App() {
     };
     const isLocal = client.id.startsWith('local-');
     try {
-      const response = await fetch(`${apiBase}/api/clients${isLocal ? '' : `/${client.id}`}`, {
+      const response = await apiRequest(`${apiBase}/api/clients${isLocal ? '' : `/${client.id}`}`, {
         method: isLocal ? 'POST' : 'PUT',
         headers: apiHeaders,
         body: JSON.stringify(body)
@@ -665,7 +796,7 @@ export default function App() {
       formData.append('tenantId', tenantId);
       formData.append('userId', userId);
       const endpoint = updatingExisting ? `${apiBase}/api/clients/${client.id}/credit-report/upload` : `${apiBase}/api/upload/credit-report`;
-      const response = await fetch(endpoint, { method: 'POST', headers: { 'X-Tenant-ID': tenantId, 'X-User-ID': userId }, body: formData });
+      const response = await apiRequest(endpoint, { method: 'POST', headers: { 'X-Tenant-ID': tenantId }, body: formData });
       const data: ParseResult = await response.json();
       if (!response.ok || !data.success) throw new Error(data.error || 'Upload failed');
       setParseResult(data);
@@ -686,7 +817,7 @@ export default function App() {
     const saved = client.id.startsWith('local-') ? await saveClient() : client;
     if (!saved) return;
     try {
-      const response = await fetch(`${apiBase}/api/portal/links`, {
+      const response = await apiRequest(`${apiBase}/api/portal/links`, {
         method: 'POST',
         headers: apiHeaders,
         body: JSON.stringify({ clientId: saved.id, tenantId, baseUrl: `${window.location.origin}/portal` })
@@ -717,7 +848,7 @@ export default function App() {
   const postClientAction = async (path: string, body: Record<string, unknown> = {}, method = 'POST') => {
     const saved = await ensureSavedClient();
     if (!saved) return null;
-    const response = await fetch(`${apiBase}/api/clients/${saved.id}${path}`, {
+    const response = await apiRequest(`${apiBase}/api/clients/${saved.id}${path}`, {
       method,
       headers: apiHeaders,
       body: JSON.stringify({ ...body, tenantId, baseUrl: `${window.location.origin}/portal` })
@@ -744,7 +875,7 @@ export default function App() {
       const form = new FormData();
       form.append('docName', docUploadName);
       form.append('filename', `${docUploadName.replace(/\s+/g, '_')}.pdf`);
-      const response = await fetch(`${apiBase}/api/clients/${saved.id}/documents/upload`, { method: 'POST', headers: { 'X-Tenant-ID': tenantId, 'X-User-ID': userId }, body: form });
+      const response = await apiRequest(`${apiBase}/api/clients/${saved.id}/documents/upload`, { method: 'POST', headers: { 'X-Tenant-ID': tenantId }, body: form });
       const data = await response.json();
       if (!response.ok || !data.success) throw new Error(data.error || 'Could not mark document uploaded');
       updateClientFromResponse(data);
@@ -822,7 +953,7 @@ export default function App() {
       return;
     }
     try {
-      const response = await fetch(`${apiBase}/api/admin/clients`, { headers: { 'X-Tenant-ID': tenantId, 'X-User-ID': userId } });
+      const response = await apiRequest(`${apiBase}/api/admin/clients`, { headers: { 'X-Tenant-ID': tenantId } });
       const data = await response.json();
       if (!response.ok || !data.success) throw new Error(data.error || 'Could not load admin queue');
       setAdminClients((data.clients || []).map((item: Client) => withWorkflowDefaults(item)));
@@ -891,35 +1022,61 @@ export default function App() {
   ];
   const navItems = allNavItems.filter((item) => isAdminRole || item.key !== 'admin');
 
-  const login = async () => {
-    const selected = users.find((user) => user.id === userId) || users[0];
-    if (!selected) {
-      alert('Please select a tenant user first.');
-      return;
+  const login = async (event?: FormEvent) => {
+    event?.preventDefault();
+    setLoginError('');
+    try {
+      const response = await apiRequest(`${apiBase}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: loginEmail.trim().toLowerCase(), password: loginPassword })
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.error || 'Sign-in failed');
+      setSessionUser(data.user);
+      setUserId(data.user.id);
+      setTenantId(data.tenant.id);
+      setLoggedIn(true);
+      setLoginPassword('');
+      setClient(newLocalClient(data.tenant.id, data.user.id));
+      await Promise.all([loadTenants(), loadUsers(data.tenant.id), loadClients('', data.tenant.id)]);
+    } catch (error) {
+      setLoginError(error instanceof Error ? error.message : 'Sign-in failed');
     }
-    const chosenUserId = selected.id;
-    setUserId(chosenUserId);
-    localStorage.setItem('fintastic_tenant_id', tenantId);
-    localStorage.setItem('fintastic_user_id', chosenUserId);
-    localStorage.setItem('fintastic_logged_in', '1');
-    setLoggedIn(true);
-    setClient(newLocalClient(tenantId, chosenUserId));
-    await loadClients('', tenantId);
   };
+
+  const logout = async () => {
+    try {
+      await apiRequest(`${apiBase}/api/auth/logout`, { method: 'POST' });
+    } finally {
+      localStorage.removeItem('fintastic_logged_in');
+      localStorage.removeItem('fintastic_user_id');
+      setLoggedIn(false);
+      setSessionUser(null);
+      setUsers([]);
+      setClients([]);
+      setLoginPassword('');
+    }
+  };
+
+  if (sessionChecking) {
+    return <div className="login-shell"><div className="login-card"><h1>Fin-Tastic</h1><p>Checking secure session…</p></div></div>;
+  }
 
   if (!loggedIn) {
     return (
       <div className="login-shell">
-        <div className="login-card">
+        <form className="login-card" onSubmit={login}>
           <div className="brand-block login-brand"><div className="brand-mark">FT</div><div><strong>Fin-Tastic</strong><span>Sales Coach</span></div></div>
-          <h1>Sign in to your tenant workspace</h1>
-          <p>Choose the tenant and user once. The live workspace will not randomly switch roles or tenants.</p>
-          <Field label="Backend API Base"><input value={apiBase} onChange={(event) => setApiBase(event.target.value)} /></Field>
-          <Field label="Tenant"><select value={tenantId} onChange={(event) => setCurrentTenant(event.target.value)}>{tenants.length ? tenants.map((tenant) => <option key={tenant.id} value={tenant.id}>{tenant.name}</option>) : <option value={tenantId}>{tenantId}</option>}</select></Field>
-          <Field label="User / Role"><select value={userId} onChange={(event) => setUserId(event.target.value)}>{users.length ? users.map((user) => <option key={user.id} value={user.id}>{user.name} · {user.role}</option>) : <option value={userId}>{userId}</option>}</select></Field>
-          <div className="button-row"><button className="primary" onClick={login}>Enter Workspace</button><button className="secondary" onClick={saveApiBase}>Reload Tenants</button></div>
-          <div className="panel-card tenant-rules"><strong>Isolation rule:</strong><p>Clients are loaded and saved only under the selected tenant. Users inside the same tenant share the same client database.</p></div>
-        </div>
+          <h1>Secure sign in</h1>
+          <p>Use the email address and password created for you by the Fin-Tastic platform owner.</p>
+          <Field label="Email Address"><input required autoComplete="username" type="email" value={loginEmail} onChange={(event) => setLoginEmail(event.target.value)} /></Field>
+          <Field label="Password"><input required autoComplete="current-password" type="password" value={loginPassword} onChange={(event) => setLoginPassword(event.target.value)} /></Field>
+          <details><summary>Connection settings</summary><Field label="Backend API Base"><input value={apiBase} onChange={(event) => setApiBase(event.target.value)} /></Field></details>
+          {loginError && <div className="notice error">{loginError}</div>}
+          <div className="button-row"><button className="primary" type="submit">Sign In</button><button className="secondary" type="button" onClick={saveApiBase}>Save API Address</button></div>
+          <div className="panel-card tenant-rules"><strong>Tenant security:</strong><p>Your login determines your tenant. Tenant headers cannot be used to enter another company’s workspace.</p></div>
+        </form>
       </div>
     );
   }
@@ -963,7 +1120,7 @@ export default function App() {
           <div className="topbar-actions session-chip">
             <span><strong>{currentTenant?.name || tenantId}</strong></span>
             <span>{currentUser ? `${currentUser.name} · ${currentUser.role}` : userId}</span>
-            <button className="secondary" onClick={() => { localStorage.removeItem('fintastic_logged_in'); setLoggedIn(false); setActiveView('dashboard'); }}>Switch / Logout</button>
+            <button className="secondary" onClick={logout}>Sign Out</button>
           </div>
         </header>
 
@@ -1119,6 +1276,9 @@ export default function App() {
                   <span>Bureau: {parseResult.bureau || 'Unknown'}</span>
                   <span>Confidence: {parseResult.confidence || 0}%</span>
                   <span>Tenant: {parseResult.tenantId}</span>
+                  <span>Accounts: {parseResult.accounts?.length || parseResult.parserDebug?.accountCount || 0}</span>
+                  <span>OCR: {parseResult.parserDebug?.ocrUsed ? 'Used' : parseResult.parserDebug?.ocrAvailable ? 'Available' : 'Not available'}</span>
+                  {parseResult.bureau === 'Datanamix' ? <span>Datanamix blocks: {parseResult.parserDebug?.datanamixSubscriberBlocks || 0}</span> : null}
                   {parseResult.warnings?.length ? <small>{parseResult.warnings.join(' ')}</small> : null}
                 </div>
               ) : null}
@@ -1206,11 +1366,31 @@ export default function App() {
               <StatCard label="Reduced Proposal" value={currency(coach.totals.reducedInstalment)} sub="Editable per account" />
               <StatCard label="Estimated Relief" value={currency(coach.totals.estimatedRelief)} sub="Before final checks" />
             </div>
-            <div className="three-column">
-              <div className="panel-card"><h3>Why this route</h3><ul className="clean-list">{coach.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul></div>
-              <div className="panel-card"><h3>Next steps</h3><ol className="clean-list numbered">{coach.nextSteps.map((step) => <li key={step}>{step}</li>)}</ol></div>
-              <div className="panel-card"><h3>Objection help</h3><ul className="clean-list">{coach.objectionHandlers.length ? coach.objectionHandlers.map((item) => <li key={item}>{item}</li>) : <li>Capture more data to generate objection handling.</li>}</ul></div>
+            <div className="two-column">
+              <div className="panel-card script-card">
+                <div className="section-heading"><div><h3>Call opening</h3><p>Read naturally; do not sound scripted.</p></div><button className="secondary" type="button" onClick={() => navigator.clipboard?.writeText(coach.callOpening)}>Copy Opening</button></div>
+                <blockquote>{coach.callOpening}</blockquote>
+                <h4>Permission / transition question</h4>
+                <p className="script-line">{coach.permissionQuestion}</p>
+              </div>
+              <div className="panel-card">
+                <h3>Discovery questions</h3>
+                <ol className="clean-list numbered">{coach.discoveryQuestions.map((question) => <li key={question}>{question}</li>)}</ol>
+              </div>
             </div>
+            <div className="panel-card">
+              <div className="section-heading"><div><h3>Conversation guide</h3><p>Move through the stages in order and listen before presenting the service.</p></div></div>
+              <div className="conversation-grid">{coach.conversationGuide.map((step) => <article className="conversation-step" key={step.stage}><strong>{step.stage}</strong><span>{step.objective}</span><p>“{step.script}”</p></article>)}</div>
+            </div>
+            <div className="two-column">
+              <div className="panel-card"><h3>Why this route</h3><ul className="clean-list">{coach.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul><h3>Value points</h3><ul className="clean-list">{coach.valuePoints.map((point) => <li key={point}>{point}</li>)}</ul></div>
+              <div className="panel-card"><h3>Next steps</h3><ol className="clean-list numbered">{coach.nextSteps.map((step) => <li key={step}>{step}</li>)}</ol><h3>Closing script</h3><blockquote>{coach.closingScript}</blockquote></div>
+            </div>
+            <div className="panel-card">
+              <div className="section-heading"><div><h3>Objections and responses</h3><p>Acknowledge, answer honestly, then use the follow-up question.</p></div></div>
+              <div className="objection-grid">{coach.objections.length ? coach.objections.map((item) => <article className="objection-card" key={item.objection}><h4>“{item.objection}”</h4><p><strong>Response:</strong> {item.response}</p><p className="follow-up"><strong>Ask:</strong> {item.followUp}</p></article>) : <p>Capture more data to generate objection handling.</p>}</div>
+            </div>
+            <div className="panel-card compliance-card"><h3>Compliance reminders</h3><ul className="clean-list">{coach.complianceReminders.map((item) => <li key={item}>{item}</li>)}</ul></div>
           </section>
         )}
 
@@ -1400,19 +1580,44 @@ export default function App() {
                 <Field label="Current Tenant"><input value={currentTenant?.name || tenantId} readOnly /></Field>
                 <Field label="Current User / Role"><input value={currentUser ? `${currentUser.name} · ${currentUser.role}` : userId} readOnly /></Field>
               </div>
-              <div className="button-row settings-buttons"><button className="primary" onClick={saveApiBase}>Save API and Reload</button><button className="secondary" onClick={() => loadClients()}>Reload Client List</button><button className="secondary" onClick={() => { localStorage.removeItem('fintastic_logged_in'); setLoggedIn(false); }}>Switch Tenant/User</button></div>
-              <form className="panel-card" onSubmit={createTenant}>
-                <h3>Create a new tenant</h3>
-                <p>Create the company workspace and its first administrator. The tenant is saved in the backend database.</p>
-                <div className="form-grid">
-                  <Field label="Tenant / Company Name"><input required value={tenantForm.name} onChange={(event) => setTenantForm({ ...tenantForm, name: event.target.value })} /></Field>
-                  <Field label="NCRDC Number"><input value={tenantForm.ncr} onChange={(event) => setTenantForm({ ...tenantForm, ncr: event.target.value })} /></Field>
-                  <Field label="Administrator Name"><input value={tenantForm.adminName} onChange={(event) => setTenantForm({ ...tenantForm, adminName: event.target.value })} /></Field>
-                  <Field label="Administrator Email"><input type="email" value={tenantForm.adminEmail} onChange={(event) => setTenantForm({ ...tenantForm, adminEmail: event.target.value })} /></Field>
-                </div>
-                <div className="button-row"><button className="primary" type="submit" disabled={creatingTenant}>{creatingTenant ? 'Creating Tenant…' : 'Create Tenant'}</button>{tenantCreateMessage && <span>{tenantCreateMessage}</span>}</div>
-              </form>
-              <div className="panel-card tenant-rules"><h3>Isolation rules built in</h3><ul className="clean-list"><li>Client list calls use <code>GET /api/clients</code> with <code>X-Tenant-ID</code>.</li><li>Uploads use the same header and save files under the configured tenant data directory.</li><li>Backend rejects client reads/updates when the client is not inside the active tenant.</li><li>Users in the same tenant share the same clients because they query the same tenant database.</li></ul></div>
+              <div className="button-row settings-buttons"><button className="primary" onClick={saveApiBase}>Save API and Reload</button><button className="secondary" onClick={() => loadClients()}>Reload Client List</button><button className="secondary" onClick={logout}>Sign Out</button></div>
+              {isPlatformOwner ? (
+                <>
+                  <div className="panel-card owner-card">
+                    <h3>Platform owner access</h3>
+                    <p>You are authenticated as Yunoos Daniels. Only this platform-owner session can create tenants and user logins.</p>
+                  </div>
+                  <div className="two-column">
+                    <form className="panel-card" onSubmit={createTenant}>
+                      <h3>Create a new tenant</h3>
+                      <p>Create the company workspace and its first administrator.</p>
+                      <div className="form-grid">
+                        <Field label="Tenant / Company Name"><input required value={tenantForm.name} onChange={(event) => setTenantForm({ ...tenantForm, name: event.target.value })} /></Field>
+                        <Field label="NCRDC Number"><input value={tenantForm.ncr} onChange={(event) => setTenantForm({ ...tenantForm, ncr: event.target.value })} /></Field>
+                        <Field label="Administrator Name"><input required value={tenantForm.adminName} onChange={(event) => setTenantForm({ ...tenantForm, adminName: event.target.value })} /></Field>
+                        <Field label="Administrator Email"><input required type="email" value={tenantForm.adminEmail} onChange={(event) => setTenantForm({ ...tenantForm, adminEmail: event.target.value })} /></Field>
+                        <Field label="Administrator Password"><input required minLength={12} autoComplete="new-password" type="password" value={tenantForm.adminPassword} onChange={(event) => setTenantForm({ ...tenantForm, adminPassword: event.target.value })} /></Field>
+                      </div>
+                      <div className="button-row"><button className="primary" type="submit" disabled={creatingTenant}>{creatingTenant ? 'Creating Tenant…' : 'Create Tenant'}</button>{tenantCreateMessage && <span>{tenantCreateMessage}</span>}</div>
+                    </form>
+                    <form className="panel-card" onSubmit={createUser}>
+                      <h3>Create a tenant user</h3>
+                      <p>Create consultants, managers or tenant administrators. Only you can perform this action.</p>
+                      <div className="form-grid">
+                        <Field label="Tenant"><select value={userForm.tenantId} onChange={(event) => setUserForm({ ...userForm, tenantId: event.target.value })}>{tenants.map((tenant) => <option key={tenant.id} value={tenant.id}>{tenant.name}</option>)}</select></Field>
+                        <Field label="Role"><select value={userForm.role} onChange={(event) => setUserForm({ ...userForm, role: event.target.value })}><option>Consultant</option><option>Manager</option><option>Admin</option></select></Field>
+                        <Field label="Full Name"><input required value={userForm.name} onChange={(event) => setUserForm({ ...userForm, name: event.target.value })} /></Field>
+                        <Field label="Email"><input required type="email" value={userForm.email} onChange={(event) => setUserForm({ ...userForm, email: event.target.value })} /></Field>
+                        <Field label="Password"><input required minLength={12} autoComplete="new-password" type="password" value={userForm.password} onChange={(event) => setUserForm({ ...userForm, password: event.target.value })} /></Field>
+                      </div>
+                      <div className="button-row"><button className="primary" type="submit" disabled={creatingUser}>{creatingUser ? 'Creating User…' : 'Create User'}</button>{userCreateMessage && <span>{userCreateMessage}</span>}</div>
+                    </form>
+                  </div>
+                </>
+              ) : (
+                <div className="panel-card"><h3>Owner-managed access</h3><p>Tenant and user creation is restricted to Yunoos Daniels, the Fin-Tastic platform owner. Tenant admins and managers cannot create tenants or users.</p></div>
+              )}
+              <div className="panel-card tenant-rules"><h3>Isolation rules built in</h3><ul className="clean-list"><li>Email and password authentication is required for every staff API request.</li><li>Normal users are locked to the tenant stored in their authenticated session.</li><li>Duplicate clients are blocked inside the same tenant using ID number and fallback identity details.</li><li>The same client may exist in another tenant because tenants remain isolated.</li></ul></div>
             </div>
           </section>
         )}
