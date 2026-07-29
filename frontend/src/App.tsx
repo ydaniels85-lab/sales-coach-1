@@ -1,43 +1,6 @@
 import { ChangeEvent, FormEvent, ReactNode, useEffect, useMemo, useState } from 'react';
 import khuselaLogo from './assets/khusela-logo.png';
 
-const isBrowserRuntime = typeof window !== 'undefined';
-
-const cleanBaseUrl = (value: string): string => value.replace(/\/$/, '');
-
-const isLocalHostName = (host: string): boolean => ['localhost', '127.0.0.1', '0.0.0.0'].includes(host);
-
-const deployedOrigin = (): string => {
-  if (!isBrowserRuntime) return 'http://localhost:5000';
-  return cleanBaseUrl(window.location.origin);
-};
-
-const defaultApiBase = (): string => {
-  if (!isBrowserRuntime) return 'http://localhost:5000';
-  const saved = cleanBaseUrl(localStorage.getItem('fintastic_sales_api') || '');
-  const host = window.location.hostname;
-  const onDeployedHost = !isLocalHostName(host);
-  const origin = deployedOrigin();
-
-  // On Render/Railway/production the frontend and Flask API are served from the same domain.
-  // Ignore old localhost:5000 values saved from desktop testing, because that breaks login online.
-  if (onDeployedHost && (!saved || saved.includes('localhost') || saved.includes('127.0.0.1') || saved.includes(':5000'))) {
-    localStorage.setItem('fintastic_sales_api', origin);
-    return origin;
-  }
-  return saved || (onDeployedHost ? origin : 'http://localhost:5000');
-};
-
-const defaultTenantId = (): string => {
-  if (!isBrowserRuntime) return 'khusela-debt-management';
-  return localStorage.getItem('fintastic_tenant_id') || 'khusela-debt-management';
-};
-
-const defaultUserId = (): string => {
-  if (!isBrowserRuntime) return 'khusela-manager-01';
-  return localStorage.getItem('fintastic_user_id') || 'khusela-manager-01';
-};
-
 type ViewKey = 'dashboard' | 'clients' | 'upload' | 'profile' | 'budget' | 'coach' | 'accounts' | 'mandate' | 'documents' | 'workflow' | 'admin' | 'knowledge' | 'settings';
 type ServiceType = 'Debt Review Sales Coach' | 'Debt Review Removal' | 'Debt Mediation' | 'Needs Manual Review';
 type Urgency = 'Low' | 'Medium' | 'High';
@@ -974,12 +937,12 @@ const adminTrackerLanes = [
 ];
 
 export default function App() {
-  const [apiBase, setApiBase] = useState(defaultApiBase);
+  const [apiBase, setApiBase] = useState(() => localStorage.getItem('fintastic_sales_api') || 'http://localhost:5000');
   const [loggedIn, setLoggedIn] = useState(() => localStorage.getItem('fintastic_logged_in') === '1');
   const [tenants, setTenants] = useState<Tenant[]>([]);
-  const [tenantId, setTenantId] = useState(defaultTenantId);
+  const [tenantId, setTenantId] = useState(() => localStorage.getItem('fintastic_tenant_id') || 'liberty-credit-specialists');
   const [users, setUsers] = useState<TenantUser[]>([]);
-  const [userId, setUserId] = useState(defaultUserId);
+  const [userId, setUserId] = useState(() => localStorage.getItem('fintastic_user_id') || 'lib-agent-1');
   const [clients, setClients] = useState<Client[]>([]);
   const [client, setClient] = useState<Client>(() => newLocalClient(tenantId, userId));
   const [searchText, setSearchText] = useState('');
@@ -1070,18 +1033,9 @@ export default function App() {
     try {
       const response = await fetch(`${apiBase}/api/tenants`);
       const data = await response.json();
-      if (data.success) {
-        const loadedTenants = data.tenants || [];
-        setTenants(loadedTenants);
-        const selectedStillExists = loadedTenants.some((tenant: Tenant) => tenant.id === tenantId);
-        const khuselaTenant = loadedTenants.find((tenant: Tenant) => tenant.id === 'khusela-debt-management');
-        if (!selectedStillExists && (khuselaTenant || loadedTenants[0])) {
-          setTenantId((khuselaTenant || loadedTenants[0]).id);
-        }
-      }
+      if (data.success) setTenants(data.tenants || []);
     } catch {
       setTenants([
-        { id: 'khusela-debt-management', name: 'Khusela Debt Management', tradingName: 'Khusela Debt Management', fullName: 'Rosande Ruth Roberts', ncr: 'NCRDC3999', phone: '076 949 0966', email: 'admin@kdebt.co.za', finalRegistrationDate: '2022-05-23', physicalAddress: '74 Maynard Road, 3rd Floor, CHB Building, Wynberg', postalAddress: '25 Batts Road, Wynberg, 7800', town: 'Cape Town', userCount: 16, clientCount: 0 },
         { id: 'liberty-credit-specialists', name: 'Liberty Credit Specialists', ncr: 'NCRDC-1829', userCount: 3, clientCount: clients.length },
         { id: 'apex-debt-solutions', name: 'Apex Debt Solutions', ncr: 'NCRDC-2491', userCount: 2, clientCount: 0 }
       ]);

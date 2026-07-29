@@ -49,7 +49,7 @@ except Exception:  # pragma: no cover
     pdfium = None
 
 APP_NAME = "Fin-Tastic Sales Coach API"
-APP_VERSION = "2026.07-render-login-khusela-fix"
+APP_VERSION = "2026.07-free-mee-admin-tracker-layout"
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = Path(os.environ.get("DATA_DIR", BASE_DIR / "data"))
 UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", BASE_DIR / "uploads"))
@@ -631,16 +631,15 @@ def create_seed_db() -> Dict[str, Any]:
     db: Dict[str, Any] = {"version": APP_VERSION, "tenants": {}}
     for tenant in DEFAULT_TENANTS:
         tenant_id = tenant["id"]
-        tenant_record = deepcopy(tenant)
-        tenant_record.update({
+        db["tenants"][tenant_id] = {
             "id": tenant_id,
+            "name": tenant["name"],
+            "ncr": tenant["ncr"],
+            "users": tenant["users"],
             "clients": [],
             "uploads": [],
-            "commissionSnapshots": [],
-            "knowledgeAssessments": [],
             "createdAt": now_iso(),
-        })
-        db["tenants"][tenant_id] = tenant_record
+        }
     demo = make_client("liberty-credit-specialists", "Demo Asset Client", "lib-agent-1")
     demo.update({"phone": "0642965776", "whatsapp": "0642965776", "email": "client@example.com", "creditScore": 512, "scoreFound": True, "status": "Credit Report Uploaded"})
     demo["accounts"] = demo_accounts()
@@ -684,10 +683,7 @@ def load_db() -> Dict[str, Any]:
                     merged_users = []
                     for default_user in value:
                         previous = existing_users.pop(default_user.get("id"), {})
-                        if tenant_id == "khusela-debt-management":
-                            merged_users.append(deepcopy(default_user))
-                        else:
-                            merged_users.append({**default_user, **{k: v for k, v in previous.items() if k not in {"id", "role"}}})
+                        merged_users.append({**default_user, **{k: v for k, v in previous.items() if k not in {"id", "role"}}})
                     # Preserve legacy users for older demo tenants, but keep Khusela exactly at 10 consultants, 4 admins and 2 managers.
                     if tenant_id != "khusela-debt-management":
                         for legacy_user in existing_users.values():

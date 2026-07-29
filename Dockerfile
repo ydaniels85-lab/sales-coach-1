@@ -30,5 +30,5 @@ RUN mkdir -p /app/backend/frontend_dist \
     && cp -r /app/frontend/dist/* /app/backend/frontend_dist/
 
 WORKDIR /app/backend
-EXPOSE 10000
+EXPOSE 5000
 CMD ["sh", "-c", "python -m gunicorn --bind 0.0.0.0:${PORT:-10000} --workers 1 --timeout 180 app:app"]
