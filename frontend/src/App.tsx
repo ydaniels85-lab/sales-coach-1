@@ -1,40 +1,41 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { ChangeEvent, FormEvent, ReactNode, useEffect, useMemo, useState } from 'react';
+
+type ViewKey = 'dashboard' | 'clients' | 'upload' | 'profile' | 'coach' | 'accounts' | 'mandate' | 'documents' | 'workflow' | 'admin' | 'settings';
+type ServiceType = 'Debt Review Sales Coach' | 'Debt Review Removal' | 'Debt Mediation' | 'Needs Manual Review';
+type Urgency = 'Low' | 'Medium' | 'High';
+
+type Tenant = { id: string; name: string; ncr: string; userCount: number; clientCount: number };
+type TenantUser = { id: string; name: string; role: string; email: string };
+
+type Applicant = {
+  firstName: string;
+  secondName: string;
+  surname: string;
+  dateOfBirth: string;
+  gender: string;
+  maritalStatus: string;
+  fullName: string;
+  idNumber: string;
+  email: string;
+  phone: string;
+  whatsapp: string;
+  physicalAddress: string;
+  employer: string;
+  occupation: string;
+  dateEmployed: string;
+  salaryFrequency: 'Weekly' | 'Fortnightly' | 'Monthly';
+  grossSalary: number;
+  nettSalary: number;
+};
 
 type BankDetails = {
   accountHolder: string;
   bankName: string;
-  accountType: string;
+  accountType: 'Cheque' | 'Savings' | 'Transmission' | 'Current' | '';
   branchCode: string;
   accountNumber: string;
-  debitOrderDay: string;
-};
-
-type PersonDetails = {
-  firstName: string;
-  secondName: string;
-  surname: string;
-  fullName: string;
-  idNumber: string;
-  dateOfBirth: string;
-  gender: string;
-  maritalStatus: string;
-  phone: string;
-  alternativePhone: string;
-  whatsapp: string;
-  email: string;
-  physicalAddress: string;
-  suburb: string;
-  city: string;
-  province: string;
-  postalCode: string;
-  employer: string;
-  occupation: string;
-  dateEmployed: string;
-  salaryFrequency: string;
-  grossSalary: number;
-  nettSalary: number;
-  monthlyLivingExpenses: number;
-  bank: BankDetails;
+  debitDay: string;
+  mandateAccepted: boolean;
 };
 
 type DebtAccount = {
@@ -54,49 +55,17 @@ type DebtAccount = {
   included: boolean;
   isFurniture: boolean;
   isAsset: boolean;
-  parserSource: string;
+  parserSource?: string;
+  rawLine?: string;
 };
 
-type PaymentPlan = {
-  months: number;
-  label: string;
-  monthlyAmount: number;
-};
-
-type GoldenQuestion = {
-  question: string;
-  whyItMatters: string;
-};
-
-type ObjectionHandler = {
-  objection: string;
-  response: string;
-};
-
-type ScoreCandidate = {
-  score: number;
-  confidence: number;
-  source: string;
-  context: string;
-};
-
-type Coach = {
-  service: string;
-  additionalServices: string[];
-  urgency: string;
+type CoachResult = {
+  service: ServiceType;
+  urgency: Urgency;
   headline: string;
   reasons: string[];
-  openingScript: string;
-  goldenQuestions: GoldenQuestion[];
-  qualifyingQuestions: string[];
   nextSteps: string[];
-  objectionHandlers: ObjectionHandler[];
-  pricing: null | {
-    currency: string;
-    onceOff: number;
-    description: string;
-    paymentPlans: PaymentPlan[];
-  };
+  objectionHandlers: string[];
   totals: {
     outstanding: number;
     arrears: number;
@@ -109,835 +78,1343 @@ type Coach = {
     hasAsset: boolean;
     hasFurniture: boolean;
     scoreZeroRule: boolean;
-    scoreInCpiRange: boolean;
-    hasOutstandingBalances: boolean;
     doubleSaleCandidate: boolean;
-    creditProfileInvestigationCandidate: boolean;
   };
 };
 
-type Client = PersonDetails & {
+type DocumentItem = { name: string; status: string; filename?: string; uploadedAt?: string; source?: string; notes?: string };
+type ClientDocuments = { required: string[]; items: DocumentItem[]; requestStatus: string; sentAt?: string; uploadLink?: string };
+type ClientSignature = { status: string; link?: string; sentAt?: string; signedAt?: string };
+type NuPayMandate = { status: string; mandateId?: string; link?: string; amount: number; debitDay: string; sentAt?: string; cancelledAt?: string; history: { at: string; action: string; amount?: number; debitDay?: string; reason?: string }[] };
+type AdminHandover = { status: string; submittedAt?: string; submittedBy?: string; notes?: string; snapshot?: Record<string, unknown> };
+type PdaInfo = { pdaName: string; pdaReference: string; proposalAmount: number; paymentStartDate: string; status: string; notes: string };
+
+type Client = Applicant & {
   id: string;
+  tenantId: string;
+  assignedUserId: string;
   applicationType: 'Single' | 'Joint';
-  spouse: PersonDetails;
+  spouse: Applicant;
+  bank: BankDetails;
   creditScore: number | null;
-  scoreFound: boolean;
-  riskCategory: string;
-  scoreConfidence: number;
-  scoreSource: string;
-  scoreRawContext: string;
-  scoreCandidates: ScoreCandidate[];
-  scoreNeedsReview: boolean;
-  scoreManuallyVerified: boolean;
+  scoreFound?: boolean;
   debtReviewListed: boolean;
-  debtReviewDetail: string;
-  serviceType: string;
+  notes: string;
   status: string;
-  detailsCompletion: number;
-  detailsComplete: boolean;
+  serviceType: ServiceType;
   accounts: DebtAccount[];
-  coach: Coach;
-  report: {
-    bureau: string;
-    filename: string;
-    reportReference: string;
-    clientReference: string;
-    searchDate: string;
-    summary: Record<string, number>;
-  };
+  coach?: CoachResult;
+  portalLinks?: { signatureLink?: string; uploadLink?: string; createdAt?: string };
+  documents?: ClientDocuments;
+  signature?: ClientSignature;
+  nupayMandate?: NuPayMandate;
+  adminHandover?: AdminHandover;
+  pdaInfo?: PdaInfo;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
-type ParseResponse = {
+type ParseResult = {
   success: boolean;
-  clientId: string;
-  client: Client;
-  warnings: string[];
-  confidence: number;
-  pdf: { encrypted: boolean; usedDefaultPassword: boolean; usedOcr: boolean; pageCount: number };
+  bureau?: string;
+  confidence?: number;
+  filename?: string;
+  warnings?: string[];
+  tenantId?: string;
+  clientId?: string;
+  client?: Client;
+  accounts?: DebtAccount[];
+  coach?: CoachResult;
+  clients?: Client[];
+  error?: string;
 };
 
-type View = 'dashboard' | 'upload' | 'capture' | 'clients';
+const drrFee = 7000;
 
-const EMPTY_BANK: BankDetails = {
-  accountHolder: '',
-  bankName: '',
-  accountType: '',
-  branchCode: '',
-  accountNumber: '',
-  debitOrderDay: ''
-};
-
-const EMPTY_PERSON: PersonDetails = {
+const emptyApplicant = (): Applicant => ({
   firstName: '',
   secondName: '',
   surname: '',
-  fullName: '',
-  idNumber: '',
   dateOfBirth: '',
   gender: '',
   maritalStatus: '',
-  phone: '',
-  alternativePhone: '',
-  whatsapp: '',
+  fullName: '',
+  idNumber: '',
   email: '',
+  phone: '',
+  whatsapp: '',
   physicalAddress: '',
-  suburb: '',
-  city: '',
-  province: '',
-  postalCode: '',
   employer: '',
   occupation: '',
   dateEmployed: '',
   salaryFrequency: 'Monthly',
   grossSalary: 0,
-  nettSalary: 0,
-  monthlyLivingExpenses: 0,
-  bank: { ...EMPTY_BANK }
-};
+  nettSalary: 0
+});
 
-const EMPTY_COACH: Coach = {
+const emptyCoach = (): CoachResult => ({
   service: 'Needs Manual Review',
-  additionalServices: [],
   urgency: 'Low',
-  headline: 'Manual review required',
-  reasons: ['Upload a credit report to activate the Sales Opportunity Engine.'],
-  openingScript: 'Capture the client objective and supporting information before selecting a service.',
-  goldenQuestions: [
-    { question: 'Are you 18 years or older and a South African citizen?', whyItMatters: 'Confirms basic identity and service eligibility.' },
-    { question: "Do you bank with one of South Africa's major banks?", whyItMatters: 'Helps confirm mandate and debit-order compatibility.' },
-    { question: 'Is your cellphone number linked to your bank account?', whyItMatters: 'Important for bank-linked verification and DebiCheck.' },
-    { question: 'Is a Debt Counsellor or creditor currently debiting your bank account?', whyItMatters: 'Identifies current collections and debit-date conflicts.' },
-    { question: 'Are you employed or receiving a regular income into your bank account?', whyItMatters: 'Confirms affordability and payment sustainability.' }
-  ],
-  qualifyingQuestions: ['What result is the client trying to achieve?'],
-  nextSteps: ['Capture the client details and upload the credit report.'],
-  objectionHandlers: [{ objection: 'Can you guarantee the result?', response: 'Do not promise an outcome before the report and documents are verified.' }],
-  pricing: null,
+  headline: 'Create or select a client',
+  reasons: ['Add a client or upload a credit report to generate the sales route.'],
+  nextSteps: ['Open the client list, select a tenant, and start with a new client or upload a report.'],
+  objectionHandlers: [],
   totals: { outstanding: 0, arrears: 0, originalInstalment: 0, reducedInstalment: 0, estimatedRelief: 0 },
-  flags: {
-    debtReviewListed: false,
-    hasAsset: false,
-    hasFurniture: false,
-    scoreZeroRule: false,
-    scoreInCpiRange: false,
-    hasOutstandingBalances: false,
-    doubleSaleCandidate: false,
-    creditProfileInvestigationCandidate: false
-  }
+  flags: { debtReviewListed: false, hasAsset: false, hasFurniture: false, scoreZeroRule: false, doubleSaleCandidate: false }
+});
+
+
+const requiredDocumentsFor = (service: ServiceType): string[] => {
+  const common = ['POPIA consent', 'ID copy', 'Proof of address', 'Latest payslip', '3 months bank statements', 'Credit report'];
+  if (service === 'Debt Review Removal') return [...common, 'DR removal mandate', 'NCT/court order if available', 'Paid-up letters where applicable', 'Clearance or termination evidence', 'NuPay mandate'];
+  if (service === 'Debt Review Sales Coach') return [...common, 'Form 16', '17.1 notice', 'COB request authority', 'Budget and affordability sheet', 'NuPay mandate'];
+  if (service === 'Debt Mediation') return [...common, 'Mediation mandate', 'Creditor proposal authority', 'Settlement/arrangement mandate', 'NuPay mandate'];
+  return [...common, 'Service mandate', 'NuPay mandate'];
 };
 
-const money = (value: number | undefined) => new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR' }).format(value || 0);
+const defaultDocuments = (service: ServiceType): ClientDocuments => ({
+  required: requiredDocumentsFor(service),
+  items: requiredDocumentsFor(service).map((name) => ({ name, status: 'Missing' })),
+  requestStatus: 'Not Sent',
+  sentAt: '',
+  uploadLink: ''
+});
 
-function normalizePerson(value?: Partial<PersonDetails>): PersonDetails {
+const defaultSignature = (): ClientSignature => ({ status: 'Not Sent', link: '', sentAt: '', signedAt: '' });
+const defaultNuPay = (): NuPayMandate => ({ status: 'Not Sent', mandateId: '', link: '', amount: 0, debitDay: '25', sentAt: '', cancelledAt: '', history: [] });
+const defaultAdminHandover = (): AdminHandover => ({ status: 'Not Submitted', submittedAt: '', submittedBy: '', notes: '', snapshot: {} });
+const defaultPda = (): PdaInfo => ({ pdaName: '', pdaReference: '', proposalAmount: 0, paymentStartDate: '', status: 'Not Submitted', notes: '' });
+
+const withWorkflowDefaults = (client: Client): Client => {
+  const service = (client.serviceType || client.coach?.service || 'Needs Manual Review') as ServiceType;
+  const required = requiredDocumentsFor(service);
+  const previousItems = client.documents?.items || [];
+  const existingItems = new Map(previousItems.map((item) => [item.name, item]));
+  const extraItems = previousItems.filter((item) => !required.includes(item.name));
+  const documents: ClientDocuments = {
+    required,
+    items: [...required.map((name) => existingItems.get(name) || { name, status: 'Missing' }), ...extraItems],
+    requestStatus: client.documents?.requestStatus || 'Not Sent',
+    sentAt: client.documents?.sentAt || '',
+    uploadLink: client.documents?.uploadLink || client.portalLinks?.uploadLink || ''
+  };
   return {
-    ...EMPTY_PERSON,
-    ...(value || {}),
-    grossSalary: Number(value?.grossSalary || 0),
-    nettSalary: Number(value?.nettSalary || 0),
-    monthlyLivingExpenses: Number(value?.monthlyLivingExpenses || 0),
-    bank: { ...EMPTY_BANK, ...(value?.bank || {}) }
+    ...client,
+    bank: client.bank || { accountHolder: '', bankName: '', accountType: '', branchCode: '', accountNumber: '', debitDay: '25', mandateAccepted: false },
+    spouse: client.spouse || emptyApplicant(),
+    accounts: client.accounts || [],
+    documents,
+    signature: { ...defaultSignature(), ...(client.signature || {}), link: client.signature?.link || client.portalLinks?.signatureLink || '' },
+    nupayMandate: { ...defaultNuPay(), ...(client.nupayMandate || {}), amount: toNumber(client.nupayMandate?.amount || client.coach?.totals.reducedInstalment || 0), debitDay: client.nupayMandate?.debitDay || client.bank?.debitDay || '25', history: client.nupayMandate?.history || [] },
+    adminHandover: { ...defaultAdminHandover(), ...(client.adminHandover || {}) },
+    pdaInfo: { ...defaultPda(), ...(client.pdaInfo || {}), proposalAmount: toNumber(client.pdaInfo?.proposalAmount || client.coach?.totals.reducedInstalment || 0) }
   };
+};
+
+const newLocalClient = (tenantId: string, userId: string): Client => ({
+  id: `local-${Date.now()}`,
+  tenantId,
+  assignedUserId: userId,
+  applicationType: 'Single',
+  ...emptyApplicant(),
+  fullName: 'New Client',
+  spouse: emptyApplicant(),
+  bank: { accountHolder: '', bankName: '', accountType: '', branchCode: '', accountNumber: '', debitDay: '25', mandateAccepted: false },
+  creditScore: null,
+  scoreFound: false,
+  debtReviewListed: false,
+  notes: '',
+  status: 'Lead Received',
+  serviceType: 'Needs Manual Review',
+  accounts: [],
+  coach: emptyCoach(),
+  documents: defaultDocuments('Needs Manual Review'),
+  signature: defaultSignature(),
+  nupayMandate: defaultNuPay(),
+  adminHandover: defaultAdminHandover(),
+  pdaInfo: defaultPda()
+});
+
+function currency(value: number | string | undefined): string {
+  const numberValue = typeof value === 'string' ? Number(value || 0) : Number(value || 0);
+  return new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR' }).format(Number.isFinite(numberValue) ? numberValue : 0);
 }
 
-function normalizeClient(value: Partial<Client>): Client {
-  const primary = normalizePerson(value);
+function toNumber(value: string | number | boolean | undefined): number {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+  const parsed = Number(String(value ?? '').replace(/[^0-9.-]/g, ''));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function suggestReducedAmount(balance: number, installment: number): number {
+  if (balance <= 0 && installment <= 0) return 0;
+  const balanceBased = balance * 0.015;
+  const installmentBased = installment > 0 ? installment * 0.65 : 0;
+  let suggested = Math.max(100, balanceBased, installmentBased);
+  if (installment > 0) suggested = Math.min(suggested, installment);
+  return Math.round(suggested / 10) * 10;
+}
+
+function isBadParsedAccount(account: DebtAccount): boolean {
+  const creditor = String(account.creditorName || '').trim().toLowerCase();
+  const accountNumber = String(account.accountNumber || '').trim();
+  const badWords = ['total no', 'total number', 'counts', 'payment profile', 'account summary', 'enquiry', 'friday', 'monday', 'tuesday', 'wednesday', 'thursday', 'saturday', 'sunday', 'months in arrears'];
+  if (!creditor || creditor === 'unknown creditor') return true;
+  if (badWords.some((word) => creditor.includes(word))) return true;
+  const weakOnly = creditor.split(/\W+/).filter(Boolean).every((word) => ['total', 'no', 'of', 'account', 'accounts', 'credit', 'current', 'status', 'balance'].includes(word));
+  if (weakOnly) return true;
+  const largestValue = Math.max(toNumber(account.openingBalance), toNumber(account.currentBalance), toNumber(account.arrears), toNumber(account.monthlyInstallment), toNumber(account.reducedAmount));
+  if (!accountNumber && largestValue < 100) return true;
+  return false;
+}
+
+function evaluateCoach(client: Client, accounts: DebtAccount[]): CoachResult {
+  const included = accounts.filter((account) => account.included);
+  const outstanding = included.reduce((sum, account) => sum + toNumber(account.currentBalance), 0);
+  const arrears = included.reduce((sum, account) => sum + toNumber(account.arrears), 0);
+  const originalInstalment = included.reduce((sum, account) => sum + toNumber(account.monthlyInstallment), 0);
+  const reducedInstalment = included.reduce((sum, account) => sum + toNumber(account.reducedAmount), 0);
+  const hasAsset = included.some((account) => account.isAsset || /vehicle|home loan|bond|mortgage|wesbank|mfc/i.test(account.creditorName));
+  const hasFurniture = included.some((account) => account.isFurniture || /russells|bradlows|lewis|furniture|beares|jd/i.test(account.creditorName));
+  const scoreIsKnown = Boolean(client.scoreFound) && client.creditScore !== null && client.creditScore !== undefined && String(client.creditScore) !== '';
+  const numericScore = scoreIsKnown ? Number(client.creditScore) : null;
+  const scoreZeroRule = scoreIsKnown && numericScore === 0;
+  const debtReviewListed = Boolean(client.debtReviewListed || scoreZeroRule);
+
+  let service: ServiceType = 'Debt Mediation';
+  let urgency: Urgency = 'Medium';
+  let headline = 'Debt mediation opportunity detected';
+  const reasons: string[] = [];
+  let nextSteps: string[] = [];
+  let objectionHandlers: string[] = [];
+
+  if (debtReviewListed) {
+    service = 'Debt Review Removal';
+    urgency = 'High';
+    headline = 'Debt Review Removal lead';
+    reasons.push('The report indicates a debt-review flag or score-zero rule, so DR removal must be checked first.');
+    if (outstanding > 0) reasons.push('Balances still show on the report, so this can become a double sale: removal plus mediation.');
+  } else if (hasAsset) {
+    service = 'Debt Review Sales Coach';
+    urgency = 'High';
+    headline = 'Asset-protection opportunity';
+    reasons.push('Home loan or vehicle finance style accounts were detected. Lead with protecting the client’s asset.');
+  } else if (scoreIsKnown && numericScore !== null && numericScore >= 400 && numericScore <= 650 && arrears > 0) {
+    service = 'Debt Mediation';
+    urgency = 'High';
+    headline = 'Debt mediation lead with arrears pressure';
+    reasons.push('The score and arrears pattern suggest the client needs urgent affordability relief.');
+  } else if (outstanding > 0) {
+    service = 'Debt Mediation';
+    urgency = 'Medium';
+    headline = 'Debt mediation lead';
+    reasons.push('Outstanding balances are present and can be negotiated into a structured repayment plan.');
+  } else {
+    service = 'Needs Manual Review';
+    urgency = 'Low';
+    headline = 'Manual assessment needed';
+    reasons.push('The current data does not show enough debt to recommend a sale safely.');
+  }
+
+  if (hasFurniture) reasons.push('Furniture accounts detected. Tag them because clients often ask whether household goods are at risk.');
+  if (originalInstalment > 0) reasons.push(`Estimated instalment relief is ${currency(Math.max(0, originalInstalment - reducedInstalment))} before final affordability checks.`);
+
+  if (service === 'Debt Review Removal') {
+    nextSteps = ['Confirm if the client is actively under debt review or only still bureau-flagged.', 'Request ID, proof of address, latest payslip/bank statement, and existing NCT/court documents.', 'Explain the R7,000 removal fee and offer 1-3 months.', 'If balances remain, present mediation as the second sale.'];
+    objectionHandlers = ['I already paid my debt counsellor: explain that payment history and current flag status still need to be verified.', 'I only want my name cleared: explain removal is step one; active balances may still affect score recovery.'];
+  } else if (service === 'Debt Review Sales Coach') {
+    nextSteps = ['Confirm income, expenses, and whether the client is behind on home/vehicle payments.', 'Position the call around protecting the asset and creating a sustainable plan.', 'Prepare Form 16, consent, credit report, and COB workflow if the client qualifies.'];
+    objectionHandlers = ['I do not want debt review: explain that assets at risk need urgent protection and eligibility must be assessed first.', 'I can catch up next month: compare arrears and instalments against nett income before accepting that answer.'];
+  } else if (service === 'Debt Mediation') {
+    nextSteps = ['Confirm all income and debit orders before making a proposal.', 'Use included accounts only and adjust reduced amounts where affordability changes.', 'Send mediation mandate and upload-documents link before contacting creditors.'];
+    objectionHandlers = ['I can pay creditors myself: explain that one coordinated proposal can reduce pressure.', 'I am not in arrears yet: explain mediation can prevent arrears if affordability is already strained.'];
+  }
+
   return {
-    ...primary,
-    id: value.id || '',
-    applicationType: value.applicationType === 'Joint' ? 'Joint' : 'Single',
-    spouse: normalizePerson(value.spouse),
-    creditScore: value.creditScore ?? null,
-    scoreFound: Boolean(value.scoreFound),
-    riskCategory: value.riskCategory || '',
-    scoreConfidence: Number(value.scoreConfidence || 0),
-    scoreSource: value.scoreSource || '',
-    scoreRawContext: value.scoreRawContext || '',
-    scoreCandidates: Array.isArray(value.scoreCandidates) ? value.scoreCandidates : [],
-    scoreNeedsReview: Boolean(value.scoreNeedsReview),
-    scoreManuallyVerified: Boolean(value.scoreManuallyVerified),
-    debtReviewListed: Boolean(value.debtReviewListed),
-    debtReviewDetail: value.debtReviewDetail || '',
-    serviceType: value.serviceType || value.coach?.service || 'Needs Manual Review',
-    status: value.status || 'Client Details Captured',
-    detailsCompletion: Number(value.detailsCompletion || 0),
-    detailsComplete: Boolean(value.detailsComplete),
-    accounts: Array.isArray(value.accounts) ? value.accounts : [],
-    coach: {
-      ...EMPTY_COACH,
-      ...(value.coach || {}),
-      reasons: value.coach?.reasons || EMPTY_COACH.reasons,
-      openingScript: value.coach?.openingScript || EMPTY_COACH.openingScript,
-      goldenQuestions: Array.isArray(value.coach?.goldenQuestions) && value.coach!.goldenQuestions.length
-        ? value.coach!.goldenQuestions
-        : EMPTY_COACH.goldenQuestions,
-      qualifyingQuestions: value.coach?.qualifyingQuestions || EMPTY_COACH.qualifyingQuestions,
-      nextSteps: value.coach?.nextSteps || EMPTY_COACH.nextSteps,
-      objectionHandlers: Array.isArray(value.coach?.objectionHandlers)
-        ? value.coach!.objectionHandlers.map((item) => typeof item === 'string'
-          ? { objection: 'Consultant reminder', response: item }
-          : item)
-        : EMPTY_COACH.objectionHandlers,
-      totals: { ...EMPTY_COACH.totals, ...(value.coach?.totals || {}) },
-      flags: { ...EMPTY_COACH.flags, ...(value.coach?.flags || {}) },
-      pricing: value.coach?.pricing || null
-    },
-    report: {
-      bureau: value.report?.bureau || '',
-      filename: value.report?.filename || '',
-      reportReference: value.report?.reportReference || '',
-      clientReference: value.report?.clientReference || '',
-      searchDate: value.report?.searchDate || '',
-      summary: value.report?.summary || {}
-    }
+    service,
+    urgency,
+    headline,
+    reasons,
+    nextSteps,
+    objectionHandlers,
+    totals: { outstanding, arrears, originalInstalment, reducedInstalment, estimatedRelief: Math.max(0, originalInstalment - reducedInstalment) },
+    flags: { debtReviewListed, hasAsset, hasFurniture, scoreZeroRule, doubleSaleCandidate: debtReviewListed && outstanding > 0 }
   };
 }
 
-function calculateCompletion(client: Client): number {
-  const primary = [
-    client.firstName, client.surname, client.idNumber, client.phone, client.email,
-    client.physicalAddress, client.employer, client.nettSalary,
-    client.bank.accountHolder, client.bank.bankName, client.bank.accountType, client.bank.accountNumber
-  ];
-  const values: Array<string | number> = [...primary];
-  if (client.applicationType === 'Joint') {
-    values.push(
-      client.spouse.firstName, client.spouse.surname, client.spouse.idNumber,
-      client.spouse.phone, client.spouse.email, client.spouse.employer,
-      client.spouse.nettSalary, client.spouse.bank.accountHolder,
-      client.spouse.bank.bankName, client.spouse.bank.accountNumber
-    );
-  }
-  const completed = values.filter((value) => value !== '' && value !== 0).length;
-  return values.length ? Math.round((completed / values.length) * 100) : 0;
+function Badge({ children, tone = 'neutral' }: { children: ReactNode; tone?: 'good' | 'warn' | 'danger' | 'blue' | 'neutral' }) {
+  return <span className={`badge ${tone}`}>{children}</span>;
 }
 
-async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(path, {
-    ...init,
-    headers: {
-      ...(init.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
-      ...(init.headers || {})
-    }
-  });
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const error = new Error(body.error || `Request failed (${response.status})`) as Error & { payload?: unknown; status?: number };
-    error.payload = body;
-    error.status = response.status;
-    throw error;
-  }
-  return body as T;
-}
-
-function Field(props: {
-  label: string;
-  value: string | number;
-  onChange: (value: string) => void;
-  type?: string;
-  placeholder?: string;
-  inputMode?: 'text' | 'numeric' | 'decimal' | 'tel' | 'email' | 'search' | 'url' | 'none';
-}) {
+function StatCard({ label, value, sub }: { label: string; value: string; sub: string }) {
   return (
-    <label>
-      {props.label}
-      <input
-        type={props.type || 'text'}
-        value={props.value}
-        placeholder={props.placeholder}
-        inputMode={props.inputMode}
-        onChange={(event) => props.onChange(event.target.value)}
-      />
+    <div className="stat-card">
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <small>{sub}</small>
+    </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <label className="field">
+      <span>{label}</span>
+      {children}
     </label>
-  );
-}
-
-function SelectField(props: { label: string; value: string; options: string[]; onChange: (value: string) => void }) {
-  return (
-    <label>
-      {props.label}
-      <select value={props.value} onChange={(event) => props.onChange(event.target.value)}>
-        <option value="">Select</option>
-        {props.options.map((option) => <option key={option} value={option}>{option}</option>)}
-      </select>
-    </label>
-  );
-}
-
-function PasswordDialog(props: {
-  open: boolean;
-  invalid: boolean;
-  companyDefaultAvailable: boolean;
-  busy: boolean;
-  onCancel: () => void;
-  onSubmit: (password: string, useDefault: boolean) => void;
-}) {
-  const [password, setPassword] = useState('');
-  useEffect(() => { if (props.open) setPassword(''); }, [props.open]);
-  if (!props.open) return null;
-  return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true">
-      <section className="modal-card">
-        <div className="icon-bubble">🔒</div>
-        <h2>Password-protected credit report</h2>
-        <p>The PDF is encrypted. Enter the report password, or use the company default kept securely on the server.</p>
-        {props.invalid && <div className="alert danger">That password did not unlock the PDF. Check it and try again.</div>}
-        <label>PDF password<input autoFocus type="password" value={password} onChange={(event) => setPassword(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && password) props.onSubmit(password, false); }} /></label>
-        <div className="button-row">
-          <button className="ghost" onClick={props.onCancel} disabled={props.busy}>Cancel</button>
-          {props.companyDefaultAvailable && <button className="secondary" onClick={() => props.onSubmit('', true)} disabled={props.busy}>Use company default</button>}
-          <button className="primary" onClick={() => props.onSubmit(password, false)} disabled={props.busy || !password}>Unlock & parse</button>
-        </div>
-      </section>
-    </div>
-  );
-}
-
-function UploadView({ onParsed }: { onParsed: (result: ParseResponse) => void }) {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [file, setFile] = useState<File | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const [passwordPrompt, setPasswordPrompt] = useState({ open: false, invalid: false, companyDefaultAvailable: false });
-
-  const submit = async (password = '', useDefault = false) => {
-    if (!file) return;
-    setBusy(true);
-    setError('');
-    const form = new FormData();
-    form.append('file', file);
-    if (password) form.append('pdfPassword', password);
-    if (useDefault) form.append('useDefaultPassword', 'true');
-    try {
-      const result = await api<ParseResponse>('/api/upload/credit-report', { method: 'POST', body: form });
-      setPasswordPrompt({ open: false, invalid: false, companyDefaultAvailable: false });
-      onParsed(result);
-    } catch (caught) {
-      const typed = caught as Error & { payload?: { code?: string; invalidPassword?: boolean; companyDefaultAvailable?: boolean } };
-      if (typed.payload?.code === 'PDF_PASSWORD_REQUIRED') {
-        setPasswordPrompt({ open: true, invalid: Boolean(typed.payload.invalidPassword), companyDefaultAvailable: Boolean(typed.payload.companyDefaultAvailable) });
-      } else {
-        setError(typed.message);
-      }
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <>
-      <section className="panel upload-panel">
-        <div className="section-heading"><div><p className="eyebrow">Credit report</p><h2>Upload and analyse</h2></div><span className="pill">Protected PDF flow enabled</span></div>
-        <div className="drop-zone" onClick={() => inputRef.current?.click()}>
-          <input ref={inputRef} hidden type="file" accept="application/pdf,.pdf" onChange={(event) => setFile(event.target.files?.[0] || null)} />
-          <div className="upload-icon">PDF</div>
-          <strong>{file?.name || 'Choose a PDF report'}</strong>
-          <span>{file ? `${(file.size / 1024).toFixed(0)} KB ready to parse` : 'Click here to select a Datanamix credit report'}</span>
-        </div>
-        <div className="info-grid">
-          <article><b>Protected PDFs</b><span>A password box opens only when the file is encrypted.</span></article>
-          <article><b>Client capture</b><span>After parsing, complete personal, employment, affordability and banking information.</span></article>
-          <article><b>Sales Coach</b><span>Debt Review, Removal, Mediation and Credit Profile Investigation routing.</span></article>
-        </div>
-        {error && <div className="alert danger">{error}</div>}
-        <button className="primary large" disabled={!file || busy} onClick={() => submit()}>{busy ? 'Analysing report…' : 'Analyse credit report'}</button>
-      </section>
-      <PasswordDialog
-        open={passwordPrompt.open}
-        invalid={passwordPrompt.invalid}
-        companyDefaultAvailable={passwordPrompt.companyDefaultAvailable}
-        busy={busy}
-        onCancel={() => setPasswordPrompt({ open: false, invalid: false, companyDefaultAvailable: false })}
-        onSubmit={submit}
-      />
-    </>
-  );
-}
-
-function PersonForm(props: {
-  title: string;
-  subtitle: string;
-  person: PersonDetails;
-  setPersonField: <K extends keyof PersonDetails>(field: K, value: PersonDetails[K]) => void;
-  setBankField: <K extends keyof BankDetails>(field: K, value: BankDetails[K]) => void;
-}) {
-  const person = props.person;
-  return (
-    <div className="form-section-stack">
-      <section className="panel form-panel">
-        <div className="section-heading"><div><p className="eyebrow">{props.subtitle}</p><h2>{props.title}</h2></div></div>
-        <div className="form-grid three">
-          <Field label="First name" value={person.firstName} onChange={(value) => props.setPersonField('firstName', value)} />
-          <Field label="Second name" value={person.secondName} onChange={(value) => props.setPersonField('secondName', value)} />
-          <Field label="Surname" value={person.surname} onChange={(value) => props.setPersonField('surname', value)} />
-          <Field label="ID number" value={person.idNumber} inputMode="numeric" onChange={(value) => props.setPersonField('idNumber', value)} />
-          <Field label="Date of birth" type="date" value={person.dateOfBirth} onChange={(value) => props.setPersonField('dateOfBirth', value)} />
-          <SelectField label="Gender" value={person.gender} options={['Female', 'Male', 'Non-binary', 'Prefer not to say']} onChange={(value) => props.setPersonField('gender', value)} />
-          <SelectField label="Marital status" value={person.maritalStatus} options={['Single', 'Married in community of property', 'Married out of community of property', 'Divorced', 'Widowed', 'Life partner']} onChange={(value) => props.setPersonField('maritalStatus', value)} />
-          <Field label="Cellphone" value={person.phone} inputMode="tel" onChange={(value) => props.setPersonField('phone', value)} />
-          <Field label="Alternative number" value={person.alternativePhone} inputMode="tel" onChange={(value) => props.setPersonField('alternativePhone', value)} />
-          <Field label="WhatsApp" value={person.whatsapp} inputMode="tel" onChange={(value) => props.setPersonField('whatsapp', value)} />
-          <Field label="Email" type="email" value={person.email} inputMode="email" onChange={(value) => props.setPersonField('email', value)} />
-        </div>
-        <div className="form-grid two address-grid">
-          <label className="span-two">Physical address<textarea rows={3} value={person.physicalAddress} onChange={(event) => props.setPersonField('physicalAddress', event.target.value)} /></label>
-          <Field label="Suburb" value={person.suburb} onChange={(value) => props.setPersonField('suburb', value)} />
-          <Field label="City / Town" value={person.city} onChange={(value) => props.setPersonField('city', value)} />
-          <Field label="Province" value={person.province} onChange={(value) => props.setPersonField('province', value)} />
-          <Field label="Postal code" value={person.postalCode} inputMode="numeric" onChange={(value) => props.setPersonField('postalCode', value)} />
-        </div>
-      </section>
-
-      <section className="panel form-panel">
-        <div className="section-heading"><div><p className="eyebrow">Affordability</p><h2>Employment and income</h2></div></div>
-        <div className="form-grid three">
-          <Field label="Employer" value={person.employer} onChange={(value) => props.setPersonField('employer', value)} />
-          <Field label="Occupation" value={person.occupation} onChange={(value) => props.setPersonField('occupation', value)} />
-          <Field label="Date employed" type="date" value={person.dateEmployed} onChange={(value) => props.setPersonField('dateEmployed', value)} />
-          <SelectField label="Salary frequency" value={person.salaryFrequency} options={['Weekly', 'Fortnightly', 'Monthly']} onChange={(value) => props.setPersonField('salaryFrequency', value)} />
-          <Field label="Gross salary" type="number" value={person.grossSalary} inputMode="decimal" onChange={(value) => props.setPersonField('grossSalary', Number(value || 0))} />
-          <Field label="Nett salary" type="number" value={person.nettSalary} inputMode="decimal" onChange={(value) => props.setPersonField('nettSalary', Number(value || 0))} />
-          <Field label="Monthly household budget / living expenses" type="number" value={person.monthlyLivingExpenses} inputMode="decimal" onChange={(value) => props.setPersonField('monthlyLivingExpenses', Number(value || 0))} />
-        </div>
-      </section>
-
-      <section className="panel form-panel banking-panel">
-        <div className="section-heading"><div><p className="eyebrow">Debit-order readiness</p><h2>Banking information</h2></div><span className="pill">Verify against bank statement</span></div>
-        <div className="form-grid three">
-          <Field label="Account holder" value={person.bank.accountHolder} onChange={(value) => props.setBankField('accountHolder', value)} />
-          <SelectField label="Bank name" value={person.bank.bankName} options={['Absa', 'African Bank', 'Capitec', 'Discovery Bank', 'FNB', 'Investec', 'Nedbank', 'Standard Bank', 'TymeBank', 'Other']} onChange={(value) => props.setBankField('bankName', value)} />
-          <SelectField label="Account type" value={person.bank.accountType} options={['Cheque / Current', 'Savings', 'Transmission']} onChange={(value) => props.setBankField('accountType', value)} />
-          <Field label="Branch code" value={person.bank.branchCode} inputMode="numeric" onChange={(value) => props.setBankField('branchCode', value)} />
-          <Field label="Account number" value={person.bank.accountNumber} inputMode="numeric" onChange={(value) => props.setBankField('accountNumber', value)} />
-          <SelectField label="Preferred debit-order day" value={person.bank.debitOrderDay} options={Array.from({ length: 31 }, (_, index) => String(index + 1))} onChange={(value) => props.setBankField('debitOrderDay', value)} />
-        </div>
-      </section>
-    </div>
-  );
-}
-
-function scoreStatus(client: Client) {
-  if (client.scoreManuallyVerified) return { label: 'Manually verified', className: 'verified' };
-  if (!client.scoreFound) return { label: 'Score not found', className: 'review' };
-  if (client.scoreNeedsReview) return { label: 'Needs verification', className: 'review' };
-  return { label: `Parser confidence ${client.scoreConfidence}%`, className: 'verified' };
-}
-
-function ClientCapture(props: { client: Client; onSaved: (client: Client) => void; onOpenCoach: () => void }) {
-  const [draft, setDraft] = useState<Client>(() => normalizeClient(props.client));
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const [message, setMessage] = useState('');
-  const liveCompletion = useMemo(() => calculateCompletion(draft), [draft]);
-
-  useEffect(() => {
-    setDraft(normalizeClient(props.client));
-    setError('');
-    setMessage('');
-  }, [props.client]);
-
-  const setPrimary = <K extends keyof PersonDetails>(field: K, value: PersonDetails[K]) => {
-    setDraft((current) => ({ ...current, [field]: value }));
-  };
-  const setPrimaryBank = <K extends keyof BankDetails>(field: K, value: BankDetails[K]) => {
-    setDraft((current) => ({ ...current, bank: { ...current.bank, [field]: value } }));
-  };
-  const setSpouse = <K extends keyof PersonDetails>(field: K, value: PersonDetails[K]) => {
-    setDraft((current) => ({ ...current, spouse: { ...current.spouse, [field]: value } }));
-  };
-  const setSpouseBank = <K extends keyof BankDetails>(field: K, value: BankDetails[K]) => {
-    setDraft((current) => ({ ...current, spouse: { ...current.spouse, bank: { ...current.spouse.bank, [field]: value } } }));
-  };
-
-  const save = async () => {
-    setBusy(true);
-    setError('');
-    setMessage('');
-    try {
-      const result = await api<{ success: boolean; client: Client }>(`/api/clients/${draft.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify(draft)
-      });
-      const saved = normalizeClient(result.client);
-      setDraft(saved);
-      props.onSaved(saved);
-      setMessage('Client details, application type and banking information were saved.');
-    } catch (caught) {
-      setError((caught as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="view-stack capture-view">
-      <section className="hero-card capture-hero">
-        <div>
-          <p className="eyebrow">Client capture</p>
-          <h2>{draft.fullName || [draft.firstName, draft.surname].filter(Boolean).join(' ') || 'New client'}</h2>
-          <p>{draft.report.bureau ? `${draft.report.bureau} report attached` : 'Credit report not uploaded yet'} · {draft.serviceType}</p>
-        </div>
-        <div className="completion-box"><span>Capture completion</span><strong>{liveCompletion}%</strong><div><i style={{ width: `${liveCompletion}%` }} /></div></div>
-      </section>
-
-      <section className="panel application-selector">
-        <div><p className="eyebrow">Application structure</p><h2>Single or joint application</h2><p>Select Joint to open a complete spouse/co-applicant capture section.</p></div>
-        <div className="segment-control">
-          <button className={draft.applicationType === 'Single' ? 'active' : ''} onClick={() => setDraft((current) => ({ ...current, applicationType: 'Single' }))}>Single application</button>
-          <button className={draft.applicationType === 'Joint' ? 'active' : ''} onClick={() => setDraft((current) => ({ ...current, applicationType: 'Joint' }))}>Joint application</button>
-        </div>
-      </section>
-
-      <section className={`panel score-verification ${scoreStatus(draft).className}`}>
-        <div className="section-heading">
-          <div>
-            <p className="eyebrow">Credit score verification</p>
-            <h2>Confirm the client’s final bureau score</h2>
-            <p>The parser now uses the labelled Final Score row and ignores score-band numbers, dates, balances and account totals.</p>
-          </div>
-          <span className={`score-status ${scoreStatus(draft).className}`}>{scoreStatus(draft).label}</span>
-        </div>
-        <div className="score-verification-grid">
-          <label>
-            Client credit score
-            <input
-              type="number"
-              min="0"
-              max="999"
-              inputMode="numeric"
-              value={draft.creditScore ?? ''}
-              placeholder="Enter score shown on report"
-              onChange={(event) => {
-                const raw = event.target.value;
-                setDraft((current) => ({
-                  ...current,
-                  creditScore: raw === '' ? null : Math.max(0, Math.min(999, Number(raw))),
-                  scoreFound: raw !== '',
-                  scoreNeedsReview: raw === '',
-                  scoreManuallyVerified: raw !== ''
-                }));
-              }}
-            />
-          </label>
-          <article>
-            <span>Detected from</span>
-            <strong>{draft.scoreSource || 'No labelled score detected'}</strong>
-            <small>{draft.scoreRawContext || 'Upload a report or capture the score manually.'}</small>
-          </article>
-          <article>
-            <span>Risk category</span>
-            <strong>{draft.riskCategory || 'Not detected'}</strong>
-            <small>{draft.scoreCandidates.length ? `${draft.scoreCandidates.length} labelled candidate${draft.scoreCandidates.length === 1 ? '' : 's'} checked` : 'No candidate values available'}</small>
-          </article>
-        </div>
-        {draft.scoreNeedsReview && !draft.scoreManuallyVerified && (
-          <div className="alert warn">Check the number printed under “Final Score” in the PDF before presenting the Sales Coach recommendation.</div>
-        )}
-        {draft.scoreManuallyVerified && (
-          <div className="alert success">This score will be treated as manually verified when you save the client.</div>
-        )}
-      </section>
-
-      <PersonForm title="Primary applicant personal information" subtitle="Primary applicant" person={draft} setPersonField={setPrimary} setBankField={setPrimaryBank} />
-
-      {draft.applicationType === 'Joint' && (
-        <div className="joint-divider">
-          <div><span>Joint application</span><h2>Spouse / co-applicant</h2></div>
-          <PersonForm title="Spouse / co-applicant personal information" subtitle="Joint applicant" person={draft.spouse} setPersonField={setSpouse} setBankField={setSpouseBank} />
-        </div>
-      )}
-
-      {error && <div className="alert danger">{error}</div>}
-      {message && <div className="alert success">{message}</div>}
-      <section className="save-bar">
-        <div><strong>{draft.applicationType} application</strong><span>Save before sending mandates, signature links or handing over to admin.</span></div>
-        <div className="button-row">
-          <button className="ghost" onClick={props.onOpenCoach}>View Sales Coach</button>
-          <button className="primary large" disabled={busy} onClick={save}>{busy ? 'Saving…' : 'Save client details'}</button>
-        </div>
-      </section>
-    </div>
-  );
-}
-
-function SalesCoachPanel({ coach }: { coach: Coach }) {
-  const [goldenAnswers, setGoldenAnswers] = useState<Record<number, 'yes' | 'no'>>({});
-
-  useEffect(() => {
-    setGoldenAnswers({});
-  }, [coach.service, coach.headline]);
-
-  const answeredCount = Object.keys(goldenAnswers).length;
-  const cpiTriggers = [
-    coach.flags.scoreInCpiRange ? 'Credit score between 100 and 600' : '',
-    !coach.flags.hasOutstandingBalances ? 'No active balances' : '',
-    !coach.flags.debtReviewListed ? 'No debt-review flag' : ''
-  ].filter(Boolean);
-
-  return (
-    <section className={`panel coach-panel ${coach.flags.creditProfileInvestigationCandidate ? 'cpi' : ''}`}>
-      <div className="section-heading"><div><p className="eyebrow">Sales Opportunity Engine</p><h2>{coach.headline}</h2></div><div className="coach-badges"><span className={`urgency ${coach.urgency.toLowerCase()}`}>{coach.urgency}</span><span className="service-badge">{coach.service}</span></div></div>
-
-      {coach.flags.creditProfileInvestigationCandidate && (
-        <div className="opportunity-callout">
-          <div><span>CPI opportunity rule active</span><strong>{cpiTriggers.join(' · ')}</strong></div>
-          <b>Potential Credit Profile Investigation sale</b>
-        </div>
-      )}
-
-      {coach.flags.scoreZeroRule && (
-        <div className="opportunity-callout">
-          <div><span>Exact score-zero rule active</span><strong>Credit score 0 routes to Debt Review Removal</strong></div>
-          <b>{coach.flags.doubleSaleCandidate ? 'Removal plus Mediation opportunity' : 'Debt Review Removal opportunity'}</b>
-        </div>
-      )}
-
-      {coach.additionalServices.length > 0 && (
-        <div className="alert warn"><strong>Additional recommendation:</strong> {coach.additionalServices.join(', ')} because active balances remain.</div>
-      )}
-
-      <section className="golden-section">
-        <div className="golden-heading">
-          <div><p className="eyebrow">Consultant qualification checklist</p><h3>5 Golden Questions</h3><p>Ask these before presenting the service or sending a debit-order mandate.</p></div>
-          <div className="golden-progress"><strong>{answeredCount}/5</strong><span>answered</span></div>
-        </div>
-        <div className="golden-grid">
-          {coach.goldenQuestions.map((item, index) => (
-            <article className={`golden-card ${goldenAnswers[index] || ''}`} key={`${item.question}-${index}`}>
-              <div className="golden-number">{index + 1}</div>
-              <div className="golden-copy"><strong>{item.question}</strong><small>{item.whyItMatters}</small></div>
-              <div className="answer-buttons">
-                <button type="button" className={goldenAnswers[index] === 'yes' ? 'selected yes' : ''} onClick={() => setGoldenAnswers((current) => ({ ...current, [index]: 'yes' }))}>Yes</button>
-                <button type="button" className={goldenAnswers[index] === 'no' ? 'selected no' : ''} onClick={() => setGoldenAnswers((current) => ({ ...current, [index]: 'no' }))}>No</button>
-              </div>
-            </article>
-          ))}
-        </div>
-        <div className="golden-note">A “No” answer does not automatically disqualify the client. Verify the reason, capture the correct details and choose a compliant next step.</div>
-      </section>
-
-      <div className="coach-grid">
-        <article className="script-card"><span>Suggested call opening</span><blockquote>{coach.openingScript}</blockquote></article>
-        <article><h3>Why this route</h3><ul>{coach.reasons.map((reason, index) => <li key={`${reason}-${index}`}>{reason}</li>)}</ul></article>
-        <article><h3>Product qualifying questions</h3><ol>{coach.qualifyingQuestions.map((question, index) => <li key={`${question}-${index}`}>{question}</li>)}</ol></article>
-        <article><h3>Consultant next steps</h3><ol>{coach.nextSteps.map((step, index) => <li key={`${step}-${index}`}>{step}</li>)}</ol></article>
-      </div>
-
-      {coach.pricing && (
-        <div className="pricing-section">
-          <div><p className="eyebrow">Service fee</p><h3>{money(coach.pricing.onceOff)} total</h3><p>{coach.pricing.description}</p></div>
-          <div className="payment-plans">{coach.pricing.paymentPlans.map((plan) => (
-            <article key={plan.months}><span>{plan.label}</span><strong>{money(plan.monthlyAmount)}</strong><small>{plan.months === 1 ? 'single payment' : 'per month'}</small></article>
-          ))}</div>
-        </div>
-      )}
-
-      <section className="objection-section">
-        <div className="section-heading"><div><p className="eyebrow">Conversation support</p><h3>Objection handling</h3></div><span className="pill">{coach.objectionHandlers.length} responses</span></div>
-        <div className="objection-grid">
-          {coach.objectionHandlers.map((handler, index) => (
-            <details className="objection-card" key={`${handler.objection}-${index}`} open={index === 0}>
-              <summary><span>Client says</span><strong>“{handler.objection}”</strong></summary>
-              <div><span>Suggested response</span><p>{handler.response}</p></div>
-            </details>
-          ))}
-        </div>
-      </section>
-    </section>
-  );
-}
-
-function ClientDetail(props: { client: Client; warnings?: string[]; confidence?: number; onEdit: () => void; onUpload: () => void }) {
-  const client = normalizeClient(props.client);
-  const included = client.accounts.filter((account) => account.included);
-  return (
-    <div className="view-stack">
-      <section className="hero-card">
-        <div>
-          <p className="eyebrow">{client.report.bureau || 'Client record'} {client.report.reportReference ? `· ${client.report.reportReference}` : ''}</p>
-          <h2>{client.fullName || 'Unnamed client'}</h2>
-          <p>{client.idNumber || 'ID not captured'} · {client.applicationType} · Score {client.scoreFound ? client.creditScore : 'Not found'} · {client.scoreManuallyVerified ? 'Manually verified' : client.scoreSource || 'Unverified'} · {client.status}</p>
-        </div>
-        <div className="hero-actions"><span className={`urgency ${client.coach.urgency.toLowerCase()}`}>{client.coach.urgency}</span><strong>{client.serviceType}</strong><div className="button-row"><button className="ghost light" onClick={props.onEdit}>Edit client details</button><button className="ghost light" onClick={props.onUpload}>Upload report</button></div></div>
-      </section>
-
-      {(Boolean(props.warnings?.length) || props.confidence !== undefined) && (
-        <section className="panel compact-panel">
-          <div className="section-heading"><h3>Parser quality</h3>{props.confidence !== undefined && <span className="pill">Confidence {props.confidence}%</span>}</div>
-          <div className={`score-quality-line ${scoreStatus(client).className}`}>
-            <div><span>Credit score</span><strong>{client.scoreFound ? client.creditScore : 'Not found'}</strong></div>
-            <div><span>Source</span><strong>{client.scoreSource || 'Manual verification required'}</strong></div>
-            <div><span>Status</span><strong>{scoreStatus(client).label}</strong></div>
-          </div>
-          {client.scoreRawContext && <div className="score-context"><span>Matched report text</span><code>{client.scoreRawContext}</code></div>}
-          {(props.warnings || []).map((warning) => <div className="alert warn" key={warning}>{warning}</div>)}
-          {!props.warnings?.length && !client.scoreNeedsReview && <div className="alert success">The report passed the current parser checks.</div>}
-        </section>
-      )}
-
-      <section className="metric-grid">
-        <article><span>Outstanding debt</span><strong>{money(client.coach.totals.outstanding)}</strong></article>
-        <article><span>Total arrears</span><strong>{money(client.coach.totals.arrears)}</strong></article>
-        <article><span>Current instalments</span><strong>{money(client.coach.totals.originalInstalment)}</strong></article>
-        <article><span>Capture complete</span><strong>{client.detailsCompletion}%</strong></article>
-      </section>
-
-      <section className="panel client-summary">
-        <div className="section-heading"><div><p className="eyebrow">Captured information</p><h2>Personal and banking summary</h2></div><span className="pill">{client.applicationType}</span></div>
-        <div className="summary-grid">
-          <article><span>Primary contact</span><strong>{client.phone || 'Not captured'}</strong><small>{client.email || 'Email not captured'}</small></article>
-          <article><span>Employment</span><strong>{client.employer || 'Not captured'}</strong><small>{client.occupation || 'Occupation not captured'}</small></article>
-          <article><span>Nett income</span><strong>{money(client.nettSalary)}</strong><small>Budget {money(client.monthlyLivingExpenses)}</small></article>
-          <article><span>Bank account</span><strong>{client.bank.bankName || 'Not captured'}</strong><small>{client.bank.accountType || 'Account type not captured'} · •••{client.bank.accountNumber.slice(-4) || '----'}</small></article>
-          {client.applicationType === 'Joint' && <article><span>Joint applicant</span><strong>{client.spouse.fullName || [client.spouse.firstName, client.spouse.surname].filter(Boolean).join(' ') || 'Not captured'}</strong><small>{client.spouse.idNumber || 'ID not captured'}</small></article>}
-        </div>
-      </section>
-
-      <SalesCoachPanel key={client.id} coach={client.coach} />
-
-      <section className="panel">
-        <div className="section-heading"><div><p className="eyebrow">Parsed debt accounts</p><h2>{client.accounts.length} accounts · {included.length} included</h2></div><span className="pill">CPA + NLR</span></div>
-        {client.accounts.length ? (
-          <div className="table-wrap">
-            <table>
-              <thead><tr><th>Source</th><th>Creditor</th><th>Account</th><th>Status</th><th>Opening</th><th>Balance</th><th>Arrears</th><th>Instalment</th><th>Reduced</th><th>Last paid</th></tr></thead>
-              <tbody>{client.accounts.map((account) => (
-                <tr key={account.id} className={!account.included ? 'excluded' : ''}>
-                  <td><span className="tiny-pill">{account.parserSource}</span></td>
-                  <td><strong>{account.creditorName}</strong><small>{account.accountType}</small>{account.isFurniture && <em>Furniture</em>}{account.isAsset && <em>Asset</em>}</td>
-                  <td>{account.accountNumber}</td><td>{account.status}</td><td>{money(account.openingBalance)}</td><td>{money(account.currentBalance)}</td><td>{money(account.arrears)}</td><td>{money(account.monthlyInstallment)}</td><td>{money(account.reducedAmount)}</td><td>{account.lastPaidDate || '—'}</td>
-                </tr>
-              ))}</tbody>
-            </table>
-          </div>
-        ) : <div className="alert info">No credit report accounts are attached to this manually created client yet.</div>}
-      </section>
-    </div>
-  );
-}
-
-function ClientsView(props: { clients: Client[]; select: (client: Client) => void; createNew: () => void; busy: boolean }) {
-  return (
-    <section className="panel">
-      <div className="section-heading"><div><p className="eyebrow">Tenant database</p><h2>Clients</h2></div><div className="button-row"><span className="pill">{props.clients.length} records</span><button className="primary" onClick={props.createNew} disabled={props.busy}>{props.busy ? 'Creating…' : 'New client'}</button></div></div>
-      {!props.clients.length ? <div className="empty-state"><h2>No clients yet</h2><p>Create a manual client record or upload the first report.</p><button className="primary" onClick={props.createNew}>Create client</button></div> : (
-        <div className="client-list">{props.clients.map((rawClient) => {
-          const client = normalizeClient(rawClient);
-          return (
-            <button key={client.id} onClick={() => props.select(client)}>
-              <div><strong>{client.fullName || 'Unnamed client'}</strong><span>{client.idNumber || 'ID not captured'} · {client.applicationType} · {client.report.bureau || 'No report'}</span></div>
-              <div><b>{client.serviceType}</b><span>{client.detailsCompletion}% captured · {money(client.coach.totals.outstanding)}</span></div>
-            </button>
-          );
-        })}</div>
-      )}
-    </section>
   );
 }
 
 export default function App() {
-  const [view, setView] = useState<View>('dashboard');
+  const defaultApiBase = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:5000' : window.location.origin;
+  const [apiBase, setApiBase] = useState(() => localStorage.getItem('fintastic_sales_api') || defaultApiBase);
+  const [loggedIn, setLoggedIn] = useState(() => localStorage.getItem('fintastic_logged_in') === '1');
+  const [tenants, setTenants] = useState<Tenant[]>([]);
+  const [tenantId, setTenantId] = useState(() => localStorage.getItem('fintastic_tenant_id') || 'liberty-credit-specialists');
+  const [users, setUsers] = useState<TenantUser[]>([]);
+  const [userId, setUserId] = useState(() => localStorage.getItem('fintastic_user_id') || 'lib-agent-1');
   const [clients, setClients] = useState<Client[]>([]);
-  const [selected, setSelected] = useState<Client | null>(null);
-  const [parseMeta, setParseMeta] = useState<{ warnings: string[]; confidence?: number }>({ warnings: [] });
+  const [client, setClient] = useState<Client>(() => newLocalClient(tenantId, userId));
+  const [searchText, setSearchText] = useState('');
+  const [serviceFilter, setServiceFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploadMode, setUploadMode] = useState<'new' | 'existing'>('new');
+  const [uploading, setUploading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState('Not saved in this session');
+  const [uploadError, setUploadError] = useState('');
+  const [parseResult, setParseResult] = useState<ParseResult | null>(null);
+  const [activeView, setActiveView] = useState<ViewKey>('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState('');
-  const [creating, setCreating] = useState(false);
+  const [drrMonths, setDrrMonths] = useState(3);
+  const [adminClients, setAdminClients] = useState<Client[]>([]);
+  const [handoverNotes, setHandoverNotes] = useState('');
+  const [docUploadName, setDocUploadName] = useState('ID copy');
+  const [tenantForm, setTenantForm] = useState({ name: '', ncr: '', adminName: '', adminEmail: '' });
+  const [tenantCreateMessage, setTenantCreateMessage] = useState('');
+  const [creatingTenant, setCreatingTenant] = useState(false);
 
-  const loadClients = async () => {
-    const result = await api<{ clients: Client[] }>('/api/clients');
-    const normalized = (result.clients || []).map(normalizeClient);
-    setClients(normalized);
-    setSelected((current) => current || normalized[0] || null);
-  };
+  const accounts = client.accounts || [];
+  const coach = useMemo(() => evaluateCoach(client, accounts), [client, accounts]);
+  const currentTenant = tenants.find((tenant) => tenant.id === tenantId);
+  const currentUser = users.find((user) => user.id === userId);
+  const isAdminRole = ['Admin', 'Manager'].includes(currentUser?.role || '');
 
-  useEffect(() => {
-    loadClients()
-      .catch((error) => setLoadError((error as Error).message))
-      .finally(() => setLoading(false));
-  }, []);
+  const quickTabs: { key: ViewKey; label: string; helper: string }[] = [
+    { key: 'profile', label: 'Client Info', helper: 'Details + joint' },
+    { key: 'upload', label: 'Credit Report', helper: 'Upload + parse' },
+    { key: 'coach', label: 'Sales Coach', helper: 'Route + script' },
+    { key: 'accounts', label: 'Accounts / Fees', helper: 'Reduced amounts' },
+    { key: 'documents', label: 'Docs + Signature', helper: 'Links + status' },
+    { key: 'mandate', label: 'NuPay Mandate', helper: 'Send/cancel/resend' },
+    { key: 'workflow', label: 'Admin / PDA', helper: 'Submit handover' }
+  ];
 
-  const dashboard = useMemo(() => {
-    const totalDebt = clients.reduce((sum, client) => sum + client.coach.totals.outstanding, 0);
-    const totalArrears = clients.reduce((sum, client) => sum + client.coach.totals.arrears, 0);
-    return {
-      totalDebt,
-      totalArrears,
-      removals: clients.filter((client) => client.serviceType === 'Debt Review Removal').length,
-      mediation: clients.filter((client) => client.serviceType === 'Debt Mediation').length,
-      cpi: clients.filter((client) => client.serviceType === 'Credit Profile Investigation').length
-    };
-  }, [clients]);
+  const apiHeaders = { 'Content-Type': 'application/json', 'X-Tenant-ID': tenantId, 'X-User-ID': userId };
 
-  const updateClientState = (client: Client) => {
-    const normalized = normalizeClient(client);
-    setSelected(normalized);
-    setClients((previous) => [normalized, ...previous.filter((item) => item.id !== normalized.id)]);
-  };
-
-  const parsed = (result: ParseResponse) => {
-    const client = normalizeClient({ ...result.client, id: result.clientId });
-    updateClientState(client);
-    setParseMeta({ warnings: result.warnings || [], confidence: result.confidence });
-    setView('capture');
-  };
-
-  const createClient = async () => {
-    setCreating(true);
-    setLoadError('');
+  const loadTenants = async () => {
     try {
-      const result = await api<{ success: boolean; client: Client }>('/api/clients', { method: 'POST', body: JSON.stringify({ applicationType: 'Single' }) });
-      const client = normalizeClient(result.client);
-      updateClientState(client);
-      setParseMeta({ warnings: [] });
-      setView('capture');
-    } catch (error) {
-      setLoadError((error as Error).message);
-    } finally {
-      setCreating(false);
+      const response = await fetch(`${apiBase}/api/tenants`);
+      const data = await response.json();
+      if (data.success) setTenants(data.tenants || []);
+    } catch {
+      setTenants([
+        { id: 'liberty-credit-specialists', name: 'Liberty Credit Specialists', ncr: 'NCRDC-1829', userCount: 3, clientCount: clients.length },
+        { id: 'apex-debt-solutions', name: 'Apex Debt Solutions', ncr: 'NCRDC-2491', userCount: 2, clientCount: 0 }
+      ]);
     }
   };
 
-  const nav: { key: View; label: string; note: string }[] = [
-    { key: 'dashboard', label: 'Dashboard', note: 'Sales Coach and opportunity' },
-    { key: 'upload', label: 'Upload report', note: 'Protected PDF parser' },
-    { key: 'capture', label: 'Client capture', note: 'Personal, joint and banking' },
-    { key: 'clients', label: 'Clients', note: 'Khusela client database' }
-  ];
+  const createTenant = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setCreatingTenant(true);
+    setTenantCreateMessage('');
+    try {
+      const response = await fetch(`${apiBase}/api/tenants`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(tenantForm)
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.error || 'Could not create tenant');
+      setTenants(data.tenants || []);
+      setTenantId(data.tenant.id);
+      setUserId(data.user.id);
+      localStorage.setItem('fintastic_tenant_id', data.tenant.id);
+      localStorage.setItem('fintastic_user_id', data.user.id);
+      setTenantForm({ name: '', ncr: '', adminName: '', adminEmail: '' });
+      setTenantCreateMessage(`${data.tenant.name} created successfully.`);
+      await loadUsers(data.tenant.id);
+      await loadClients('', data.tenant.id);
+    } catch (error) {
+      setTenantCreateMessage(error instanceof Error ? error.message : 'Could not create tenant');
+    } finally {
+      setCreatingTenant(false);
+    }
+  };
 
-  if (loading) return <main className="loading-page"><div className="spinner" /><p>Loading Fin-Tastic…</p></main>;
+  const loadUsers = async (nextTenantId = tenantId) => {
+    try {
+      const response = await fetch(`${apiBase}/api/users`, { headers: { 'X-Tenant-ID': nextTenantId, 'X-User-ID': userId } });
+      const data = await response.json();
+      if (data.success) {
+        setUsers(data.users || []);
+        if (!data.users?.some((user: TenantUser) => user.id === userId) && data.users?.[0]) setUserId(data.users[0].id);
+      }
+    } catch {
+      setUsers([]);
+    }
+  };
+
+  const loadClients = async (query = searchText, nextTenantId = tenantId) => {
+    const params = new URLSearchParams();
+    if (query) params.set('search', query);
+    if (serviceFilter) params.set('service', serviceFilter);
+    if (statusFilter) params.set('status', statusFilter);
+    try {
+      const response = await fetch(`${apiBase}/api/clients?${params.toString()}`, { headers: { 'X-Tenant-ID': nextTenantId, 'X-User-ID': userId } });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.error || 'Could not load clients');
+      const loadedClients = (data.clients || []).map((item: Client) => withWorkflowDefaults(item));
+      setClients(loadedClients);
+      // Important: refreshing/searching the client list must never replace the active draft/client.
+      // The active client changes only when the user clicks a client, creates a new client, or uploads a report.
+      const activeStillExists = loadedClients.some((item: Client) => item.id === client.id);
+      if (!activeStillExists && !client.id.startsWith('local-') && client.tenantId === nextTenantId) {
+        setSaveMessage('Selected client is not visible in the current search/filter, but it was not overwritten.');
+      }
+    } catch (error) {
+      console.warn(error);
+    }
+  };
+
+  useEffect(() => {
+    loadTenants();
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('fintastic_tenant_id', tenantId);
+    localStorage.setItem('fintastic_user_id', userId);
+    loadUsers(tenantId);
+    loadClients('', tenantId);
+  }, [tenantId]);
+
+  useEffect(() => {
+    localStorage.setItem('fintastic_user_id', userId);
+  }, [userId]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => loadClients(searchText), 250);
+    return () => window.clearTimeout(timer);
+  }, [searchText, serviceFilter, statusFilter]);
+
+  const setCurrentTenant = (nextTenantId: string) => {
+    setTenantId(nextTenantId);
+    setSearchText('');
+    setServiceFilter('');
+    setStatusFilter('');
+    setClient(newLocalClient(nextTenantId, userId));
+    setActiveView('clients');
+  };
+
+  const updateClient = <K extends keyof Client>(field: K, value: Client[K]) => {
+    setClient((current) => ({ ...current, [field]: value }));
+  };
+
+  const updateClientNamePart = (field: 'firstName' | 'secondName' | 'surname', value: string) => {
+    setClient((current) => {
+      const next = { ...current, [field]: value };
+      const joined = [next.firstName, next.secondName, next.surname].filter(Boolean).join(' ').trim();
+      return { ...next, fullName: joined || next.fullName };
+    });
+  };
+
+  const updateSpouse = <K extends keyof Applicant>(field: K, value: Applicant[K]) => {
+    setClient((current) => ({ ...current, spouse: { ...current.spouse, [field]: value } }));
+  };
+
+  const updateBank = <K extends keyof BankDetails>(field: K, value: BankDetails[K]) => {
+    setClient((current) => ({ ...current, bank: { ...current.bank, [field]: value } }));
+  };
+
+  const updateAccount = (id: string, field: keyof DebtAccount, value: string | number | boolean) => {
+    setClient((current) => {
+      const nextAccounts = current.accounts.map((account) => {
+        if (account.id !== id) return account;
+        const next = { ...account, [field]: typeof value === 'string' && ['openingBalance', 'currentBalance', 'arrears', 'monthlyInstallment', 'reducedAmount', 'monthsInArrears'].includes(field) ? toNumber(value) : value } as DebtAccount;
+        if (field === 'currentBalance' || field === 'monthlyInstallment') {
+          next.reducedAmount = suggestReducedAmount(toNumber(next.currentBalance), toNumber(next.monthlyInstallment));
+        }
+        return next;
+      });
+      return { ...current, accounts: nextAccounts };
+    });
+  };
+
+  const addAccount = () => {
+    setClient((current) => ({
+      ...current,
+      accounts: [
+        ...current.accounts,
+        {
+          id: `manual-${Date.now()}`,
+          creditorName: 'New Creditor',
+          accountNumber: '',
+          accountType: 'Credit Account',
+          openingBalance: 0,
+          currentBalance: 0,
+          arrears: 0,
+          monthlyInstallment: 0,
+          reducedAmount: 0,
+          lastPaidDate: '',
+          monthsInArrears: 0,
+          openDate: '',
+          status: 'Active',
+          included: true,
+          isFurniture: false,
+          isAsset: false
+        }
+      ]
+    }));
+  };
+
+  const cleanParsedAccounts = () => {
+    setClient((current) => {
+      const cleaned = current.accounts.filter((account) => !isBadParsedAccount(account));
+      if (cleaned.length === current.accounts.length) {
+        alert('No obvious bad parser rows were found.');
+        return current;
+      }
+      return { ...current, accounts: cleaned };
+    });
+  };
+
+  const startNewClient = () => {
+    setUploadMode('new');
+    setClient(newLocalClient(tenantId, userId));
+    setParseResult(null);
+    setSaveMessage('New unsaved client');
+    setActiveView('profile');
+  };
+
+  const saveClient = async (): Promise<Client | null> => {
+    setSaving(true);
+    setSaveMessage('Saving...');
+    const fullNameFromParts = [client.firstName, client.secondName, client.surname].filter(Boolean).join(' ').trim();
+    const body = {
+      ...client,
+      fullName: (client.fullName || fullNameFromParts || 'New Client').trim(),
+      coach,
+      serviceType: coach.service,
+      scoreFound: Boolean(client.scoreFound) || (client.creditScore !== null && client.creditScore !== undefined && String(client.creditScore) !== ''),
+      tenantId,
+      assignedUserId: client.assignedUserId || userId
+    };
+    const isLocal = client.id.startsWith('local-');
+    try {
+      const response = await fetch(`${apiBase}/api/clients${isLocal ? '' : `/${client.id}`}`, {
+        method: isLocal ? 'POST' : 'PUT',
+        headers: apiHeaders,
+        body: JSON.stringify(body)
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.error || 'Save failed');
+      const saved = withWorkflowDefaults(data.client);
+      setClient(saved);
+      setClients((current) => {
+        const source = Array.isArray(data.clients) ? data.clients.map((item: Client) => withWorkflowDefaults(item)) : current;
+        const exists = source.some((item: Client) => item.id === saved.id);
+        return exists ? source.map((item: Client) => item.id === saved.id ? saved : item) : [saved, ...source];
+      });
+      setParseResult(null);
+      setSaveMessage(`Saved ${saved.fullName || 'client'} at ${new Date().toLocaleTimeString()}`);
+      return saved;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not save client';
+      setSaveMessage(`Save failed: ${message}`);
+      alert(message);
+      return null;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    setSelectedFile(event.target.files?.[0] || null);
+    setUploadError('');
+  };
+
+  const handleUpload = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!selectedFile) {
+      setUploadError('Please choose a credit report PDF first.');
+      return;
+    }
+    setUploading(true);
+    setUploadError('');
+    setParseResult(null);
+
+    try {
+      const updatingExisting = uploadMode === 'existing';
+      if (updatingExisting && client.id.startsWith('local-')) {
+        throw new Error('Select a saved client first, or choose Upload as NEW client.');
+      }
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+      formData.append('tenantId', tenantId);
+      formData.append('userId', userId);
+      const endpoint = updatingExisting ? `${apiBase}/api/clients/${client.id}/credit-report/upload` : `${apiBase}/api/upload/credit-report`;
+      const response = await fetch(endpoint, { method: 'POST', headers: { 'X-Tenant-ID': tenantId, 'X-User-ID': userId }, body: formData });
+      const data: ParseResult = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.error || 'Upload failed');
+      setParseResult(data);
+      if (data.client) setClient(withWorkflowDefaults(data.client));
+      if (data.clients) setClients(data.clients.map((item: Client) => withWorkflowDefaults(item)));
+      setSaveMessage(uploadMode === 'existing' ? 'Selected client report replaced and saved.' : 'New client created from uploaded report.');
+      setSelectedFile(null);
+      setActiveView('coach');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Upload failed';
+      setUploadError(`${message}. Make sure the backend is running on ${apiBase}.`);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const createPortalLinks = async () => {
+    const saved = client.id.startsWith('local-') ? await saveClient() : client;
+    if (!saved) return;
+    try {
+      const response = await fetch(`${apiBase}/api/portal/links`, {
+        method: 'POST',
+        headers: apiHeaders,
+        body: JSON.stringify({ clientId: saved.id, tenantId, baseUrl: `${window.location.origin}/portal` })
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.error || 'Could not create links');
+      setClient((current) => ({ ...current, id: saved.id, portalLinks: { signatureLink: data.signatureLink, uploadLink: data.uploadLink, createdAt: data.createdAt } }));
+      setSaveMessage(`Portal links saved at ${new Date().toLocaleTimeString()}`);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Could not create portal links');
+    }
+  };
+
+
+  const ensureSavedClient = async (): Promise<Client | null> => {
+    if (!client.id.startsWith('local-')) return client;
+    return saveClient();
+  };
+
+  const updateClientFromResponse = (data: { client?: Client }) => {
+    if (data.client) {
+      const next = withWorkflowDefaults(data.client);
+      setClient(next);
+      setClients((current) => current.map((item) => item.id === next.id ? next : item).concat(current.some((item) => item.id === next.id) ? [] : [next]));
+    }
+  };
+
+  const postClientAction = async (path: string, body: Record<string, unknown> = {}, method = 'POST') => {
+    const saved = await ensureSavedClient();
+    if (!saved) return null;
+    const response = await fetch(`${apiBase}/api/clients/${saved.id}${path}`, {
+      method,
+      headers: apiHeaders,
+      body: JSON.stringify({ ...body, tenantId, baseUrl: `${window.location.origin}/portal` })
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) throw new Error(data.error || 'Action failed');
+    updateClientFromResponse(data);
+    return data;
+  };
+
+  const requestDocuments = async () => {
+    try {
+      await postClientAction('/documents/request');
+      alert('Document upload link created and relevant document request marked as sent.');
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Could not request documents');
+    }
+  };
+
+  const simulateDocumentUpload = async () => {
+    try {
+      const saved = await ensureSavedClient();
+      if (!saved) return;
+      const form = new FormData();
+      form.append('docName', docUploadName);
+      form.append('filename', `${docUploadName.replace(/\s+/g, '_')}.pdf`);
+      const response = await fetch(`${apiBase}/api/clients/${saved.id}/documents/upload`, { method: 'POST', headers: { 'X-Tenant-ID': tenantId, 'X-User-ID': userId }, body: form });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.error || 'Could not mark document uploaded');
+      updateClientFromResponse(data);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Could not mark document uploaded');
+    }
+  };
+
+  const sendSignatureLink = async () => {
+    try {
+      await postClientAction('/signature/send');
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Could not send signature link');
+    }
+  };
+
+  const markSignatureSigned = async () => {
+    try {
+      await postClientAction('/signature/mark-signed');
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Could not mark signature signed');
+    }
+  };
+
+  const sendNupayMandate = async () => {
+    try {
+      const amount = client.nupayMandate?.amount || coach.totals.reducedInstalment || (coach.service === 'Debt Review Removal' ? drrFee / drrMonths : 0);
+      await postClientAction('/mandate/send', { amount, debitDay: client.bank.debitDay });
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Could not send NuPay mandate');
+    }
+  };
+
+  const cancelNupayMandate = async () => {
+    try {
+      await postClientAction('/mandate/cancel');
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Could not cancel NuPay mandate');
+    }
+  };
+
+  const resendNupayMandate = async () => {
+    try {
+      await postClientAction('/mandate/resend', { reason: 'Cancelled or details changed' });
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Could not resend NuPay mandate');
+    }
+  };
+
+  const updatePdaField = <K extends keyof PdaInfo>(field: K, value: PdaInfo[K]) => {
+    setClient((current) => ({ ...current, pdaInfo: { ...defaultPda(), ...(current.pdaInfo || {}), [field]: value } }));
+  };
+
+  const savePdaInfo = async () => {
+    try {
+      await postClientAction('/pda', { ...(client.pdaInfo || defaultPda()) }, 'PUT');
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Could not save PDA info');
+    }
+  };
+
+  const submitToAdmin = async () => {
+    try {
+      await postClientAction('/admin-submit', { notes: handoverNotes });
+      setActiveView('admin');
+      loadAdminClients();
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Could not submit to admin');
+    }
+  };
+
+  const loadAdminClients = async () => {
+    if (!isAdminRole) {
+      setAdminClients([]);
+      return;
+    }
+    try {
+      const response = await fetch(`${apiBase}/api/admin/clients`, { headers: { 'X-Tenant-ID': tenantId, 'X-User-ID': userId } });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.error || 'Could not load admin queue');
+      setAdminClients((data.clients || []).map((item: Client) => withWorkflowDefaults(item)));
+    } catch (error) {
+      console.warn(error);
+      setAdminClients([]);
+    }
+  };
+
+  const saveApiBase = () => {
+    localStorage.setItem('fintastic_sales_api', apiBase);
+    loadTenants();
+    loadUsers();
+    loadClients();
+  };
+
+  const documents = useMemo(() => {
+    const common = ['POPIA consent', 'ID copy', 'Proof of address', 'Latest payslip', '3 months bank statements', 'Credit report'];
+    if (coach.service === 'Debt Review Removal') return [...common, 'DR removal mandate', 'NCT/court order if available', 'Paid-up letters where applicable', 'Clearance or termination evidence'];
+    if (coach.service === 'Debt Review Sales Coach') return [...common, 'Form 16', '17.1 notice', 'COB request letters', 'Debit order mandate', 'Budget and affordability sheet'];
+    if (coach.service === 'Debt Mediation') return [...common, 'Mediation mandate', 'Creditor proposal sheet', 'Debit order mandate', 'Settlement/arrangement letters'];
+    return common;
+  }, [coach.service]);
+
+  const handoverText = useMemo(() => {
+    return [
+      `Tenant: ${currentTenant?.name || tenantId}`,
+      `Consultant/User: ${currentUser?.name || userId}`,
+      `Client: ${client.fullName || 'Not captured'} (${client.applicationType})`,
+      `Service Route: ${coach.service} / ${coach.urgency} priority`,
+      `Status: ${client.status}`,
+      `DR Flag: ${coach.flags.debtReviewListed ? 'Yes' : 'No'}`,
+      `Outstanding: ${currency(coach.totals.outstanding)}`,
+      `Original Instalments: ${currency(coach.totals.originalInstalment)}`,
+      `Reduced Proposal: ${currency(coach.totals.reducedInstalment)}`,
+      `DRR Fee: ${coach.service === 'Debt Review Removal' ? `${currency(drrFee)} over ${drrMonths} month(s) = ${currency(drrFee / drrMonths)} p/m` : 'Not applicable'}`,
+      `Signature: ${client.signature?.status || 'Not Sent'}`,
+      `NuPay Mandate: ${client.nupayMandate?.status || 'Not Sent'} ${client.nupayMandate?.mandateId ? `(${client.nupayMandate.mandateId})` : ''}`,
+      `PDA: ${client.pdaInfo?.status || 'Not Submitted'} ${client.pdaInfo?.pdaReference ? `- ${client.pdaInfo.pdaReference}` : ''}`,
+      `Uploaded Docs: ${(client.documents?.items || []).filter((item) => item.status === 'Uploaded').length}/${(client.documents?.items || []).length}`,
+      '',
+      'Coach reasons:',
+      ...coach.reasons.map((reason) => `- ${reason}`),
+      '',
+      'Next steps:',
+      ...coach.nextSteps.map((step) => `- ${step}`)
+    ].join('\n');
+  }, [client, coach, drrMonths, currentTenant, currentUser, tenantId, userId]);
+
+  useEffect(() => {
+    if (activeView === 'admin') loadAdminClients();
+  }, [activeView, tenantId]);
+
+  const allNavItems: { key: ViewKey; label: string; helper: string }[] = [
+    { key: 'dashboard', label: 'Dashboard', helper: 'Tenant overview' },
+    { key: 'clients', label: 'Clients', helper: 'List and search' },
+    { key: 'upload', label: 'Upload Report', helper: 'Parse and route sale' },
+    { key: 'profile', label: 'Client Profile', helper: 'Single or joint application' },
+    { key: 'coach', label: 'Sales Coach', helper: 'Best next sale' },
+    { key: 'accounts', label: 'Accounts', helper: 'Reduced amount table' },
+    { key: 'mandate', label: 'Banking / NuPay', helper: 'Debit order ready' },
+    { key: 'documents', label: 'Documents', helper: 'Links and uploaded docs' },
+    { key: 'workflow', label: 'Submit Workflow', helper: 'Admin and PDA handover' },
+    { key: 'admin', label: 'Admin Queue', helper: 'Docs, fees, PDA' },
+    { key: 'settings', label: 'Settings', helper: 'API and session' }
+  ];
+  const navItems = allNavItems.filter((item) => isAdminRole || item.key !== 'admin');
+
+  const login = async () => {
+    const selected = users.find((user) => user.id === userId) || users[0];
+    if (!selected) {
+      alert('Please select a tenant user first.');
+      return;
+    }
+    const chosenUserId = selected.id;
+    setUserId(chosenUserId);
+    localStorage.setItem('fintastic_tenant_id', tenantId);
+    localStorage.setItem('fintastic_user_id', chosenUserId);
+    localStorage.setItem('fintastic_logged_in', '1');
+    setLoggedIn(true);
+    setClient(newLocalClient(tenantId, chosenUserId));
+    await loadClients('', tenantId);
+  };
+
+  if (!loggedIn) {
+    return (
+      <div className="login-shell">
+        <div className="login-card">
+          <div className="brand-block login-brand"><div className="brand-mark">FT</div><div><strong>Fin-Tastic</strong><span>Sales Coach</span></div></div>
+          <h1>Sign in to your tenant workspace</h1>
+          <p>Choose the tenant and user once. The live workspace will not randomly switch roles or tenants.</p>
+          <Field label="Backend API Base"><input value={apiBase} onChange={(event) => setApiBase(event.target.value)} /></Field>
+          <Field label="Tenant"><select value={tenantId} onChange={(event) => setCurrentTenant(event.target.value)}>{tenants.length ? tenants.map((tenant) => <option key={tenant.id} value={tenant.id}>{tenant.name}</option>) : <option value={tenantId}>{tenantId}</option>}</select></Field>
+          <Field label="User / Role"><select value={userId} onChange={(event) => setUserId(event.target.value)}>{users.length ? users.map((user) => <option key={user.id} value={user.id}>{user.name} · {user.role}</option>) : <option value={userId}>{userId}</option>}</select></Field>
+          <div className="button-row"><button className="primary" onClick={login}>Enter Workspace</button><button className="secondary" onClick={saveApiBase}>Reload Tenants</button></div>
+          <div className="panel-card tenant-rules"><strong>Isolation rule:</strong><p>Clients are loaded and saved only under the selected tenant. Users inside the same tenant share the same client database.</p></div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="app-shell">
       <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
-        <div className="brand-lockup"><div className="brand-mark">F</div><div><strong>Fin-Tastic</strong><span>Sales Coach</span></div></div>
-        <div className="tenant-card"><span>Active tenant</span><strong>Khusela Debt Management</strong><small>Open access — logins temporarily disabled</small></div>
-        <nav>{nav.map((item) => <button key={item.key} className={view === item.key ? 'active' : ''} onClick={() => { setView(item.key); setSidebarOpen(false); }}><strong>{item.label}</strong><span>{item.note}</span></button>)}</nav>
-        <button className="primary sidebar-new" onClick={createClient} disabled={creating}>{creating ? 'Creating…' : '+ New client'}</button>
-        <div className="sidebar-footer"><strong>Opportunity rules active</strong><span>DR · DRR · Mediation · Credit Profile Investigation</span></div>
+        <div className="brand-block">
+          <div className="brand-mark">FT</div>
+          <div>
+            <strong>Fin-Tastic</strong>
+            <span>Sales Coach</span>
+          </div>
+        </div>
+        <div className="tenant-card dark">
+          <small>Active tenant</small>
+          <strong>{currentTenant?.name || tenantId}</strong>
+          <span>{clients.length} visible client(s)</span>
+        </div>
+        <nav className="nav-list">
+          {navItems.map((item) => (
+            <button key={item.key} className={activeView === item.key ? 'active' : ''} onClick={() => { setActiveView(item.key); setSidebarOpen(false); }}>
+              <span>{item.label}</span>
+              <small>{item.helper}</small>
+            </button>
+          ))}
+        </nav>
+        <div className="sidebar-footer">
+          <Badge tone={coach.urgency === 'High' ? 'danger' : coach.urgency === 'Medium' ? 'warn' : 'good'}>{coach.urgency} Priority</Badge>
+          <p>{coach.service}</p>
+        </div>
       </aside>
+
       <main className="main-panel">
         <header className="topbar">
           <button className="menu-button" onClick={() => setSidebarOpen((open) => !open)}>☰</button>
-          <div><p className="eyebrow">Render deployment</p><h1>{nav.find((item) => item.key === view)?.label}</h1></div>
-          <div className="topbar-status"><span className="status-dot" />Open access</div>
+          <div>
+            <h1>{navItems.find((item) => item.key === activeView)?.label}</h1>
+            <p>Every user sees only the clients inside their own tenant database.</p>
+          </div>
+          <div className="topbar-actions session-chip">
+            <span><strong>{currentTenant?.name || tenantId}</strong></span>
+            <span>{currentUser ? `${currentUser.name} · ${currentUser.role}` : userId}</span>
+            <button className="secondary" onClick={() => { localStorage.removeItem('fintastic_logged_in'); setLoggedIn(false); setActiveView('dashboard'); }}>Switch / Logout</button>
+          </div>
         </header>
 
-        {loadError && <div className="alert danger">{loadError}</div>}
-        {view === 'upload' && <UploadView onParsed={parsed} />}
-        {view === 'clients' && <ClientsView clients={clients} select={(client) => { setSelected(client); setParseMeta({ warnings: [] }); setView('dashboard'); }} createNew={createClient} busy={creating} />}
-        {view === 'capture' && (selected ? <ClientCapture client={selected} onSaved={updateClientState} onOpenCoach={() => setView('dashboard')} /> : <section className="panel empty-state"><h2>Select or create a client</h2><p>The capture screen stores personal, joint application, employment and banking information.</p><button className="primary" onClick={createClient}>Create client</button></section>)}
-        {view === 'dashboard' && (
-          <div className="view-stack">
-            <section className="metric-grid dashboard-metrics">
-              <article><span>Clients</span><strong>{clients.length}</strong></article>
-              <article><span>Total debt found</span><strong>{money(dashboard.totalDebt)}</strong></article>
-              <article><span>Total arrears</span><strong>{money(dashboard.totalArrears)}</strong></article>
-              <article><span>CPI opportunities</span><strong>{dashboard.cpi}</strong></article>
-            </section>
-            <div className="route-strip"><span>Removal {dashboard.removals}</span><span>Mediation {dashboard.mediation}</span><span>Credit Profile Investigation {dashboard.cpi}</span></div>
-            {selected ? <ClientDetail client={selected} warnings={parseMeta.warnings} confidence={parseMeta.confidence} onEdit={() => setView('capture')} onUpload={() => setView('upload')} /> : <section className="panel empty-state"><h2>Ready for the first client</h2><p>Create a client to capture personal and banking information, or upload a Datanamix report to activate the Sales Opportunity Engine.</p><div className="button-row"><button className="secondary" onClick={createClient}>Create client</button><button className="primary" onClick={() => setView('upload')}>Upload credit report</button></div></section>}
+        <div className="case-tab-strip" aria-label="Client workflow tabs">
+          <div className="case-tab-client">
+            <span>Selected client</span>
+            <strong>{client.fullName || 'No client selected'}</strong>
+            <small>{client.id.startsWith('local-') ? 'Unsaved' : client.status}</small>
           </div>
+          <div className="case-tabs">
+            {quickTabs.map((tab, index) => (
+              <button key={tab.key} className={activeView === tab.key ? 'active' : ''} onClick={() => setActiveView(tab.key)}>
+                <b>{String.fromCharCode(65 + index)}</b>
+                <span>{tab.label}</span>
+                <small>{tab.helper}</small>
+              </button>
+            ))}
+          </div>
+          <div className="save-status">
+            <button className="primary" onClick={saveClient} disabled={saving}>{saving ? 'Saving...' : 'Save Client'}</button>
+            <small>{saveMessage}</small>
+          </div>
+        </div>
+
+        {activeView === 'dashboard' && (
+          <section className="view-stack">
+            <div className="hero-card">
+              <div>
+                <Badge tone="blue">Tenant Isolated</Badge>
+                <h2>{coach.headline}</h2>
+                <p>{currentTenant?.name || tenantId} users share this tenant’s clients, but no other tenant can see this list or database records.</p>
+                <div className="button-row">
+                  <button className="primary" onClick={() => setActiveView('clients')}>Open Client List</button>
+                  <button className="secondary" onClick={() => setActiveView('upload')}>Upload Credit Report</button>
+                </div>
+              </div>
+              <div className="hero-summary">
+                <span>Selected client</span>
+                <strong>{client.fullName || 'No client selected'}</strong>
+                <small>{coach.service}</small>
+              </div>
+            </div>
+
+            <div className="stats-grid">
+              <StatCard label="Tenant Clients" value={String(clients.length)} sub="Scoped by X-Tenant-ID" />
+              <StatCard label="Outstanding Debt" value={currency(coach.totals.outstanding)} sub="Selected client" />
+              <StatCard label="Reduced Proposal" value={currency(coach.totals.reducedInstalment)} sub="Included accounts" />
+              <StatCard label="Estimated Relief" value={currency(coach.totals.estimatedRelief)} sub="Before final checks" />
+            </div>
+
+            <div className="two-column">
+              <div className="panel-card">
+                <h3>Tenant security rule</h3>
+                <p>Frontend sends <code>X-Tenant-ID</code> and backend stores clients under that tenant only. Switching tenants changes the entire client list.</p>
+                <div className="flag-grid">
+                  <Badge tone="good">Tenant DB</Badge>
+                  <Badge tone="good">Shared users</Badge>
+                  <Badge tone="danger">No cross-tenant clients</Badge>
+                </div>
+              </div>
+              <div className="panel-card">
+                <h3>Selected client flags</h3>
+                <div className="flag-grid">
+                  <Badge tone={coach.flags.debtReviewListed ? 'danger' : 'good'}>{coach.flags.debtReviewListed ? 'Debt Review Listed' : 'No DR Listing'}</Badge>
+                  <Badge tone={coach.flags.hasAsset ? 'warn' : 'neutral'}>{coach.flags.hasAsset ? 'Asset Detected' : 'No Asset Detected'}</Badge>
+                  <Badge tone={coach.flags.hasFurniture ? 'blue' : 'neutral'}>{coach.flags.hasFurniture ? 'Furniture Tagged' : 'No Furniture Tag'}</Badge>
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {activeView === 'clients' && (
+          <section className="view-stack">
+            <div className="panel-card">
+              <div className="section-heading">
+                <div>
+                  <h2>Client list and search</h2>
+                  <p>This list is loaded only from <strong>{currentTenant?.name || tenantId}</strong>. Users in this tenant see the same records.</p>
+                </div>
+                <div className="button-row">
+                  <button className="secondary" onClick={() => loadClients()}>Refresh</button>
+                  <button className="primary" onClick={startNewClient}>New Client</button>
+                </div>
+              </div>
+              <div className="search-panel">
+                <Field label="Search name, ID, phone, email or route">
+                  <input value={searchText} onChange={(event) => setSearchText(event.target.value)} placeholder="Search this tenant’s clients..." />
+                </Field>
+                <Field label="Service filter">
+                  <select value={serviceFilter} onChange={(event) => setServiceFilter(event.target.value)}>
+                    <option value="">All services</option>
+                    <option>Debt Review Sales Coach</option>
+                    <option>Debt Review Removal</option>
+                    <option>Debt Mediation</option>
+                    <option>Needs Manual Review</option>
+                  </select>
+                </Field>
+                <Field label="Status filter">
+                  <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+                    <option value="">All statuses</option>
+                    <option>Lead Received</option>
+                    <option>Credit Report Uploaded</option>
+                    <option>Docs Requested</option>
+                    <option>Docs Received</option>
+                    <option>Handover Ready</option>
+                  </select>
+                </Field>
+              </div>
+            </div>
+
+            <div className="client-grid">
+              {clients.length ? clients.map((item) => (
+                <button key={item.id} className={`client-card ${client.id === item.id ? 'selected' : ''}`} onClick={() => { setClient(withWorkflowDefaults(item)); setActiveView('profile'); }}>
+                  <div className="client-card-top">
+                    <strong>{item.fullName || 'Unnamed Client'}</strong>
+                    <Badge tone={item.serviceType === 'Debt Review Removal' ? 'danger' : item.serviceType === 'Debt Review Sales Coach' ? 'warn' : item.serviceType === 'Debt Mediation' ? 'blue' : 'neutral'}>{item.serviceType || 'Manual'}</Badge>
+                  </div>
+                  <span>ID: {item.idNumber || 'Not captured'}</span>
+                  <span>Phone: {item.phone || item.whatsapp || 'Not captured'}</span>
+                  <span>Status: {item.status || 'Lead Received'}</span>
+                  <small>Updated: {item.updatedAt ? new Date(item.updatedAt).toLocaleString() : 'Not saved yet'}</small>
+                </button>
+              )) : <div className="empty-state">No clients found for this tenant. Create a new client or upload a report.</div>}
+            </div>
+          </section>
+        )}
+
+        {activeView === 'upload' && (
+          <section className="view-stack">
+            <div className="panel-card">
+              <div className="section-heading">
+                <div>
+                  <h2>Upload credit report</h2>
+                  <p>Uploads are saved under the active tenant only. Selected client: <strong>{client.fullName}</strong>.</p>
+                </div>
+                <Badge tone="blue">PDF</Badge>
+              </div>
+              <div className="upload-mode-panel">
+                <label className="checkline"><input type="radio" checked={uploadMode === 'new'} onChange={() => setUploadMode('new')} /> Upload as NEW client</label>
+                <label className="checkline"><input type="radio" checked={uploadMode === 'existing'} onChange={() => setUploadMode('existing')} /> Replace credit report for selected saved client</label>
+                <small>{uploadMode === 'new' ? 'Safe default: a new client record will be created. Previous selected client will not be overwritten.' : `This will update ${client.fullName || 'the selected client'} only.`}</small>
+              </div>
+              <form className="upload-box" onSubmit={handleUpload}>
+                <input type="file" accept="application/pdf,.pdf" onChange={handleFileChange} />
+                <button className="primary" disabled={uploading}>{uploading ? 'Parsing...' : uploadMode === 'new' ? 'Upload as New Client' : 'Replace Selected Report'}</button>
+              </form>
+              {selectedFile ? <p className="muted">Selected: {selectedFile.name}</p> : null}
+              {uploadError ? <div className="alert danger">{uploadError}</div> : null}
+              {parseResult ? (
+                <div className="parse-summary">
+                  <Badge tone="good">Parsed</Badge>
+                  <span>Bureau: {parseResult.bureau || 'Unknown'}</span>
+                  <span>Confidence: {parseResult.confidence || 0}%</span>
+                  <span>Tenant: {parseResult.tenantId}</span>
+                  {parseResult.warnings?.length ? <small>{parseResult.warnings.join(' ')}</small> : null}
+                </div>
+              ) : null}
+            </div>
+          </section>
+        )}
+
+        {activeView === 'profile' && (
+          <section className="view-stack">
+            <div className="panel-card">
+              <div className="section-heading">
+                <div>
+                  <h2>Client profile</h2>
+                  <p>Saved to <strong>{currentTenant?.name || tenantId}</strong> only.</p>
+                </div>
+                <div className="button-row">
+                  <select value={client.applicationType} onChange={(event) => updateClient('applicationType', event.target.value as Client['applicationType'])}>
+                    <option>Single</option>
+                    <option>Joint</option>
+                  </select>
+                  <button className="primary" onClick={saveClient} disabled={saving}>{saving ? 'Saving...' : 'Save Client'}</button>
+                </div>
+              </div>
+              <div className="form-grid">
+                <Field label="First Name"><input value={client.firstName || ''} onChange={(event) => updateClientNamePart('firstName', event.target.value)} /></Field>
+                <Field label="Second Name"><input value={client.secondName || ''} onChange={(event) => updateClientNamePart('secondName', event.target.value)} /></Field>
+                <Field label="Surname"><input value={client.surname || ''} onChange={(event) => updateClientNamePart('surname', event.target.value)} /></Field>
+                <Field label="Full Name"><input value={client.fullName} onChange={(event) => updateClient('fullName', event.target.value)} /></Field>
+                <Field label="ID Number"><input value={client.idNumber} onChange={(event) => updateClient('idNumber', event.target.value)} /></Field>
+                <Field label="Date of Birth"><input value={client.dateOfBirth || ''} onChange={(event) => updateClient('dateOfBirth', event.target.value)} /></Field>
+                <Field label="Gender"><input value={client.gender || ''} onChange={(event) => updateClient('gender', event.target.value)} /></Field>
+                <Field label="Marital Status"><input value={client.maritalStatus || ''} onChange={(event) => updateClient('maritalStatus', event.target.value)} /></Field>
+                <Field label="Email"><input value={client.email} onChange={(event) => updateClient('email', event.target.value)} /></Field>
+                <Field label="Phone"><input value={client.phone} onChange={(event) => updateClient('phone', event.target.value)} /></Field>
+                <Field label="WhatsApp"><input value={client.whatsapp} onChange={(event) => updateClient('whatsapp', event.target.value)} /></Field>
+                <Field label="Physical Address"><input value={client.physicalAddress} onChange={(event) => updateClient('physicalAddress', event.target.value)} /></Field>
+                <Field label="Employer"><input value={client.employer} onChange={(event) => updateClient('employer', event.target.value)} /></Field>
+                <Field label="Occupation"><input value={client.occupation} onChange={(event) => updateClient('occupation', event.target.value)} /></Field>
+                <Field label="Date Employed"><input type="date" value={client.dateEmployed} onChange={(event) => updateClient('dateEmployed', event.target.value)} /></Field>
+                <Field label="Salary Frequency"><select value={client.salaryFrequency} onChange={(event) => updateClient('salaryFrequency', event.target.value as Applicant['salaryFrequency'])}><option>Weekly</option><option>Fortnightly</option><option>Monthly</option></select></Field>
+                <Field label="Gross Salary"><input value={client.grossSalary} onChange={(event) => updateClient('grossSalary', toNumber(event.target.value))} /></Field>
+                <Field label="Nett Salary"><input value={client.nettSalary} onChange={(event) => updateClient('nettSalary', toNumber(event.target.value))} /></Field>
+                <Field label="Credit Score"><input value={client.scoreFound ? String(client.creditScore ?? '') : ''} placeholder="Unknown if blank" onChange={(event) => { const value = event.target.value.trim(); updateClient('creditScore', value === '' ? null : toNumber(value)); updateClient('scoreFound', value !== ''); }} /></Field>
+                <Field label="Status"><select value={client.status} onChange={(event) => updateClient('status', event.target.value)}><option>Lead Received</option><option>Credit Report Uploaded</option><option>Docs Requested</option><option>Docs Received</option><option>Handover Ready</option></select></Field>
+                <label className="checkline"><input type="checkbox" checked={client.debtReviewListed} onChange={(event) => updateClient('debtReviewListed', event.target.checked)} /> Debt Review listed/flagged</label>
+              </div>
+            </div>
+
+            {client.applicationType === 'Joint' && (
+              <div className="panel-card spouse-card">
+                <h3>Spouse / Co-applicant</h3>
+                <div className="form-grid">
+                  <Field label="Full Name"><input value={client.spouse.fullName} onChange={(event) => updateSpouse('fullName', event.target.value)} /></Field>
+                  <Field label="ID Number"><input value={client.spouse.idNumber} onChange={(event) => updateSpouse('idNumber', event.target.value)} /></Field>
+                  <Field label="Email"><input value={client.spouse.email} onChange={(event) => updateSpouse('email', event.target.value)} /></Field>
+                  <Field label="Phone"><input value={client.spouse.phone} onChange={(event) => updateSpouse('phone', event.target.value)} /></Field>
+                  <Field label="Employer"><input value={client.spouse.employer} onChange={(event) => updateSpouse('employer', event.target.value)} /></Field>
+                  <Field label="Nett Salary"><input value={client.spouse.nettSalary} onChange={(event) => updateSpouse('nettSalary', toNumber(event.target.value))} /></Field>
+                </div>
+              </div>
+            )}
+          </section>
+        )}
+
+        {activeView === 'coach' && (
+          <section className="view-stack">
+            <div className="coach-card">
+              <div className="coach-topline">
+                <Badge tone={coach.urgency === 'High' ? 'danger' : coach.urgency === 'Medium' ? 'warn' : 'good'}>{coach.urgency} Priority</Badge>
+                <Badge tone={coach.flags.doubleSaleCandidate ? 'blue' : 'neutral'}>{coach.flags.doubleSaleCandidate ? 'Double Sale Candidate' : 'Single Route'}</Badge>
+                <Badge tone={coach.flags.debtReviewListed ? 'danger' : 'good'}>{coach.flags.debtReviewListed ? 'DR Flag' : 'No DR Flag'}</Badge>
+              </div>
+              <h2>{coach.service}</h2>
+              <p>{coach.headline}</p>
+              {coach.service === 'Debt Review Removal' && (
+                <div className="panel-card fee-card">
+                  <div><h3>DRR service fee</h3><p>R7,000 can be split over 1 to 3 months.</p></div>
+                  <div className="fee-controls"><select value={drrMonths} onChange={(event) => setDrrMonths(Number(event.target.value))}><option value={1}>1 month</option><option value={2}>2 months</option><option value={3}>3 months</option></select><strong>{currency(drrFee / drrMonths)} p/m</strong></div>
+                </div>
+              )}
+            </div>
+            <div className="stats-grid compact">
+              <StatCard label="Outstanding Debt" value={currency(coach.totals.outstanding)} sub="Included accounts only" />
+              <StatCard label="Current Instalments" value={currency(coach.totals.originalInstalment)} sub="Before proposal" />
+              <StatCard label="Reduced Proposal" value={currency(coach.totals.reducedInstalment)} sub="Editable per account" />
+              <StatCard label="Estimated Relief" value={currency(coach.totals.estimatedRelief)} sub="Before final checks" />
+            </div>
+            <div className="three-column">
+              <div className="panel-card"><h3>Why this route</h3><ul className="clean-list">{coach.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul></div>
+              <div className="panel-card"><h3>Next steps</h3><ol className="clean-list numbered">{coach.nextSteps.map((step) => <li key={step}>{step}</li>)}</ol></div>
+              <div className="panel-card"><h3>Objection help</h3><ul className="clean-list">{coach.objectionHandlers.length ? coach.objectionHandlers.map((item) => <li key={item}>{item}</li>) : <li>Capture more data to generate objection handling.</li>}</ul></div>
+            </div>
+          </section>
+        )}
+
+        {activeView === 'accounts' && (
+          <section className="view-stack">
+            <div className="panel-card">
+              <div className="section-heading">
+                <div><h2>Accounts and reduced amounts</h2><p>Include/exclude accounts, tag furniture/assets, and adjust reduced instalments.</p></div>
+                <div className="button-row"><button className="secondary" onClick={cleanParsedAccounts}>Clean Bad Rows</button><button className="secondary" onClick={addAccount}>Add Account</button><button className="primary" onClick={saveClient}>Save Changes</button></div>
+              </div>
+              <div className="alert warn">Parser has been made stricter: it will reject weak rows instead of importing payment-profile fragments. Always compare the accounts against the PDF before admin/PDA handover.</div>
+              <div className="table-wrap">
+                <table className="accounts-table">
+                  <thead><tr><th>In</th><th>Creditor</th><th>Acc No</th><th>Type</th><th>Opening</th><th>Current</th><th>Arrears</th><th>Monthly</th><th>Reduced</th><th>Last Paid</th><th>Months</th><th>Open Date</th><th>Status</th><th>Tags</th></tr></thead>
+                  <tbody>
+                    {accounts.map((account) => (
+                      <tr key={account.id}>
+                        <td><input type="checkbox" checked={account.included} onChange={(event) => updateAccount(account.id, 'included', event.target.checked)} /></td>
+                        <td><input value={account.creditorName} onChange={(event) => updateAccount(account.id, 'creditorName', event.target.value)} /></td>
+                        <td><input value={account.accountNumber} onChange={(event) => updateAccount(account.id, 'accountNumber', event.target.value)} /></td>
+                        <td><input value={account.accountType} onChange={(event) => updateAccount(account.id, 'accountType', event.target.value)} /></td>
+                        <td><input value={account.openingBalance} onChange={(event) => updateAccount(account.id, 'openingBalance', event.target.value)} /></td>
+                        <td><input value={account.currentBalance} onChange={(event) => updateAccount(account.id, 'currentBalance', event.target.value)} /></td>
+                        <td><input value={account.arrears} onChange={(event) => updateAccount(account.id, 'arrears', event.target.value)} /></td>
+                        <td><input value={account.monthlyInstallment} onChange={(event) => updateAccount(account.id, 'monthlyInstallment', event.target.value)} /></td>
+                        <td><input value={account.reducedAmount} onChange={(event) => updateAccount(account.id, 'reducedAmount', event.target.value)} /></td>
+                        <td><input value={account.lastPaidDate} onChange={(event) => updateAccount(account.id, 'lastPaidDate', event.target.value)} /></td>
+                        <td><input value={account.monthsInArrears} onChange={(event) => updateAccount(account.id, 'monthsInArrears', event.target.value)} /></td>
+                        <td><input value={account.openDate} onChange={(event) => updateAccount(account.id, 'openDate', event.target.value)} /></td>
+                        <td><input value={account.status} onChange={(event) => updateAccount(account.id, 'status', event.target.value)} /></td>
+                        <td><div className="mini-tags"><label><input type="checkbox" checked={account.isFurniture} onChange={(event) => updateAccount(account.id, 'isFurniture', event.target.checked)} /> Furniture</label><label><input type="checkbox" checked={account.isAsset} onChange={(event) => updateAccount(account.id, 'isAsset', event.target.checked)} /> Asset</label></div></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {activeView === 'mandate' && (
+          <section className="view-stack">
+            <div className="panel-card">
+              <div className="section-heading"><div><h2>Banking / NuPay-ready mandate</h2><p>Capture details needed for mandate setup and later API integration.</p></div><button className="primary" onClick={saveClient}>Save Banking</button></div>
+              <div className="form-grid">
+                <Field label="Account Holder"><input value={client.bank.accountHolder} onChange={(event) => updateBank('accountHolder', event.target.value)} /></Field>
+                <Field label="Bank Name"><input value={client.bank.bankName} onChange={(event) => updateBank('bankName', event.target.value)} /></Field>
+                <Field label="Account Type"><select value={client.bank.accountType} onChange={(event) => updateBank('accountType', event.target.value as BankDetails['accountType'])}><option value="">Select type</option><option>Cheque</option><option>Savings</option><option>Transmission</option><option>Current</option></select></Field>
+                <Field label="Branch Code"><input value={client.bank.branchCode} onChange={(event) => updateBank('branchCode', event.target.value)} /></Field>
+                <Field label="Account Number"><input value={client.bank.accountNumber} onChange={(event) => updateBank('accountNumber', event.target.value)} /></Field>
+                <Field label="Debit Day"><input value={client.bank.debitDay} onChange={(event) => updateBank('debitDay', event.target.value)} /></Field>
+                <label className="checkline"><input type="checkbox" checked={client.bank.mandateAccepted} onChange={(event) => updateBank('mandateAccepted', event.target.checked)} /> Mandate accepted by client</label>
+              </div>
+            </div>
+            <div className="panel-card">
+              <div className="section-heading"><div><h2>NuPay mandate control</h2><p>Send, view status, cancel and resend a mandate when bank details or amount changes.</p></div><Badge tone={client.nupayMandate?.status === 'Pending Acceptance' ? 'warn' : client.nupayMandate?.status === 'Cancelled' ? 'danger' : client.nupayMandate?.status === 'Not Sent' ? 'neutral' : 'good'}>{client.nupayMandate?.status || 'Not Sent'}</Badge></div>
+              <div className="form-grid">
+                <Field label="Mandate Amount"><input value={client.nupayMandate?.amount || coach.totals.reducedInstalment || (coach.service === 'Debt Review Removal' ? drrFee / drrMonths : 0)} onChange={(event) => setClient((current) => ({ ...current, nupayMandate: { ...defaultNuPay(), ...(current.nupayMandate || {}), amount: toNumber(event.target.value), history: current.nupayMandate?.history || [] } }))} /></Field>
+                <Field label="Debit Day"><input value={client.bank.debitDay} onChange={(event) => updateBank('debitDay', event.target.value)} /></Field>
+                <Field label="Mandate ID"><input value={client.nupayMandate?.mandateId || ''} readOnly /></Field>
+                <Field label="Mandate Link"><input value={client.nupayMandate?.link || ''} readOnly /></Field>
+              </div>
+              <div className="button-row"><button className="primary" onClick={sendNupayMandate}>Send NuPay Mandate</button><button className="secondary" onClick={cancelNupayMandate}>Cancel Mandate</button><button className="secondary" onClick={resendNupayMandate}>Send New Mandate</button></div>
+              {client.nupayMandate?.history?.length ? <ul className="clean-list mandate-history">{client.nupayMandate.history.slice(-4).map((event, index) => <li key={`${event.at}-${index}`}>{event.at ? new Date(event.at).toLocaleString() : ''} · {event.action}{event.amount ? ` · ${currency(event.amount)}` : ''}</li>)}</ul> : <p className="muted">No mandate history yet.</p>}
+            </div>
+            <div className="panel-card">
+              <div className="section-heading"><div><h2>Client portal links</h2><p>Links include tenant and client ID so documents/signatures stay isolated.</p></div><button className="secondary" onClick={createPortalLinks}>Create Legacy Links</button></div>
+              <div className="link-grid">
+                <div><span>Signature Link</span>{client.signature?.link || client.portalLinks?.signatureLink ? <a href={client.signature?.link || client.portalLinks?.signatureLink}>{client.signature?.link || client.portalLinks?.signatureLink}</a> : <small>Not created yet</small>}</div>
+                <div><span>Upload Documents Link</span>{client.documents?.uploadLink || client.portalLinks?.uploadLink ? <a href={client.documents?.uploadLink || client.portalLinks?.uploadLink}>{client.documents?.uploadLink || client.portalLinks?.uploadLink}</a> : <small>Not created yet</small>}</div>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {activeView === 'documents' && (
+          <section className="view-stack">
+            <div className="panel-card">
+              <div className="section-heading">
+                <div><h2>Client document request and upload status</h2><p>Filtered by selected service route: {coach.service}. Send the upload link before submitting to admin.</p></div>
+                <div className="button-row"><button className="secondary" onClick={requestDocuments}>Send Upload Link</button><button className="primary" onClick={sendSignatureLink}>Send Signature Link</button></div>
+              </div>
+              <div className="link-grid">
+                <div><span>Upload link status</span><strong>{client.documents?.requestStatus || 'Not Sent'}</strong>{client.documents?.uploadLink ? <a href={client.documents.uploadLink}>{client.documents.uploadLink}</a> : <small>No upload link created yet</small>}</div>
+                <div><span>Signature status</span><strong>{client.signature?.status || 'Not Sent'}</strong>{client.signature?.link ? <a href={client.signature.link}>{client.signature.link}</a> : <small>No signature link created yet</small>}</div>
+              </div>
+              <div className="document-grid">
+                {(client.documents?.items || documents.map((name) => ({ name, status: 'Missing' } as DocumentItem))).map((doc) => (
+                  <div className={`document-item status-${doc.status.toLowerCase().replace(/\s+/g, '-')}`} key={doc.name}>
+                    <strong>{doc.name}</strong>
+                    <Badge tone={doc.status === 'Uploaded' ? 'good' : doc.status === 'Requested' ? 'warn' : 'neutral'}>{doc.status}</Badge>
+                    {doc.filename ? <small>{doc.filename}</small> : <small>Awaiting client upload</small>}
+                  </div>
+                ))}
+              </div>
+              <div className="button-row document-actions">
+                <select value={docUploadName} onChange={(event) => setDocUploadName(event.target.value)}>
+                  {(client.documents?.items || documents.map((name) => ({ name, status: 'Missing' } as DocumentItem))).map((doc) => <option key={doc.name} value={doc.name}>{doc.name}</option>)}
+                </select>
+                <button className="secondary" onClick={simulateDocumentUpload}>Mark Selected Doc Uploaded</button>
+                <button className="secondary" onClick={markSignatureSigned}>Mark Signature Signed</button>
+              </div>
+            </div>
+            <div className="panel-card handover-card"><h3>Admin handover summary</h3><textarea value={handoverText} readOnly /></div>
+          </section>
+        )}
+
+        {activeView === 'workflow' && (
+          <section className="view-stack">
+            <div className="panel-card">
+              <div className="section-heading">
+                <div><h2>Submit client to admin workflow</h2><p>Admin receives the documents, signature, fees, reduced amount, included creditors, mandate and PDA info.</p></div>
+                <Badge tone={client.adminHandover?.status === 'Submitted' ? 'good' : 'warn'}>{client.adminHandover?.status || 'Not Submitted'}</Badge>
+              </div>
+              <div className="stats-grid compact">
+                <StatCard label="Original Instalments" value={currency(coach.totals.originalInstalment)} sub="Before proposal" />
+                <StatCard label="Reduced Amount" value={currency(coach.totals.reducedInstalment)} sub="Admin/PDA proposal" />
+                <StatCard label="Included Creditors" value={String(accounts.filter((account) => account.included).length)} sub="To hand over" />
+                <StatCard label="NuPay Status" value={client.nupayMandate?.status || 'Not Sent'} sub={client.nupayMandate?.mandateId || 'No mandate ID'} />
+              </div>
+              <div className="form-grid">
+                <Field label="PDA Name"><input value={client.pdaInfo?.pdaName || ''} onChange={(event) => updatePdaField('pdaName', event.target.value)} placeholder="e.g. Hyphen PDA / CollectNet / NPDA" /></Field>
+                <Field label="PDA Reference"><input value={client.pdaInfo?.pdaReference || ''} onChange={(event) => updatePdaField('pdaReference', event.target.value)} /></Field>
+                <Field label="PDA Proposal Amount"><input value={client.pdaInfo?.proposalAmount || coach.totals.reducedInstalment} onChange={(event) => updatePdaField('proposalAmount', toNumber(event.target.value))} /></Field>
+                <Field label="Payment Start Date"><input type="date" value={client.pdaInfo?.paymentStartDate || ''} onChange={(event) => updatePdaField('paymentStartDate', event.target.value)} /></Field>
+                <Field label="PDA Status"><select value={client.pdaInfo?.status || 'Not Submitted'} onChange={(event) => updatePdaField('status', event.target.value)}><option>Not Submitted</option><option>Ready for PDA</option><option>Submitted to PDA</option><option>PDA Active</option><option>PDA Query</option></select></Field>
+                <Field label="PDA Notes"><input value={client.pdaInfo?.notes || ''} onChange={(event) => updatePdaField('notes', event.target.value)} /></Field>
+              </div>
+              <div className="button-row"><button className="secondary" onClick={savePdaInfo}>Save PDA Info</button></div>
+              <Field label="Admin handover notes"><textarea value={handoverNotes} onChange={(event) => setHandoverNotes(event.target.value)} placeholder="Add anything admin must know before statutory workflow starts..." /></Field>
+              <div className="button-row"><button className="primary" onClick={submitToAdmin}>Submit to Admin Department</button><button className="secondary" onClick={() => setActiveView('admin')}>Open Admin Queue</button></div>
+            </div>
+            <div className="panel-card handover-card"><h3>What admin will see</h3><textarea value={handoverText} readOnly /></div>
+          </section>
+        )}
+
+        {activeView === 'admin' && (
+          !isAdminRole ? (
+            <section className="view-stack"><div className="panel-card"><h2>Admin access only</h2><p>Your current role is {currentUser?.role || 'Unknown'}. Please switch to an Admin or Manager login to view the admin queue.</p></div></section>
+          ) : (
+          <section className="view-stack">
+            <div className="panel-card">
+              <div className="section-heading"><div><h2>Admin queue</h2><p>Tenant-isolated admin view showing submitted clients, documents, fees, reduced amounts, included creditors, signature, NuPay and PDA info.</p></div><button className="secondary" onClick={loadAdminClients}>Refresh Admin Queue</button></div>
+              <div className="client-grid admin-grid">
+                {(adminClients.length ? adminClients : clients).map((item) => (
+                  <button key={item.id} className={`client-card ${client.id === item.id ? 'selected' : ''}`} onClick={() => setClient(withWorkflowDefaults(item))}>
+                    <div className="client-card-top"><strong>{item.fullName || 'Unnamed Client'}</strong><Badge tone={item.adminHandover?.status === 'Submitted' ? 'good' : 'neutral'}>{item.adminHandover?.status || 'Not Submitted'}</Badge></div>
+                    <span>{item.serviceType}</span>
+                    <span>Reduced: {currency(item.coach?.totals.reducedInstalment || 0)}</span>
+                    <span>NuPay: {item.nupayMandate?.status || 'Not Sent'}</span>
+                    <span>PDA: {item.pdaInfo?.status || 'Not Submitted'}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="two-column">
+              <div className="panel-card">
+                <h3>Admin package for {client.fullName}</h3>
+                <div className="info-list">
+                  <div><span>Service</span><strong>{coach.service}</strong></div>
+                  <div><span>DRR Fee</span><strong>{coach.service === 'Debt Review Removal' ? currency(drrFee) : 'N/A'}</strong></div>
+                  <div><span>Original instalments</span><strong>{currency(coach.totals.originalInstalment)}</strong></div>
+                  <div><span>Reduced amount</span><strong>{currency(coach.totals.reducedInstalment)}</strong></div>
+                  <div><span>Signature</span><strong>{client.signature?.status || 'Not Sent'}</strong></div>
+                  <div><span>NuPay</span><strong>{client.nupayMandate?.status || 'Not Sent'}</strong></div>
+                  <div><span>PDA</span><strong>{client.pdaInfo?.status || 'Not Submitted'} {client.pdaInfo?.pdaReference ? `· ${client.pdaInfo.pdaReference}` : ''}</strong></div>
+                </div>
+                <div className="button-row"><button className="secondary" onClick={cancelNupayMandate}>Cancel Mandate</button><button className="primary" onClick={resendNupayMandate}>Send New Mandate</button></div>
+              </div>
+              <div className="panel-card">
+                <h3>Uploaded docs and included creditors</h3>
+                <ul className="clean-list">
+                  {(client.documents?.items || []).map((doc) => <li key={doc.name}>{doc.name}: <strong>{doc.status}</strong>{doc.filename ? ` · ${doc.filename}` : ''}</li>)}
+                </ul>
+                <div className="table-wrap slim"><table className="accounts-table"><thead><tr><th>Creditor</th><th>Current</th><th>Original</th><th>Reduced</th></tr></thead><tbody>{accounts.filter((account) => account.included).map((account) => <tr key={account.id}><td>{account.creditorName}</td><td>{currency(account.currentBalance)}</td><td>{currency(account.monthlyInstallment)}</td><td>{currency(account.reducedAmount)}</td></tr>)}</tbody></table></div>
+              </div>
+            </div>
+          </section>
+        ))}
+
+        {activeView === 'settings' && (
+          <section className="view-stack">
+            <div className="panel-card">
+              <h2>Tenant and API settings</h2>
+              <div className="form-grid">
+                <Field label="Backend API Base"><input value={apiBase} onChange={(event) => setApiBase(event.target.value)} /></Field>
+                <Field label="Current Tenant"><input value={currentTenant?.name || tenantId} readOnly /></Field>
+                <Field label="Current User / Role"><input value={currentUser ? `${currentUser.name} · ${currentUser.role}` : userId} readOnly /></Field>
+              </div>
+              <div className="button-row settings-buttons"><button className="primary" onClick={saveApiBase}>Save API and Reload</button><button className="secondary" onClick={() => loadClients()}>Reload Client List</button><button className="secondary" onClick={() => { localStorage.removeItem('fintastic_logged_in'); setLoggedIn(false); }}>Switch Tenant/User</button></div>
+              <form className="panel-card" onSubmit={createTenant}>
+                <h3>Create a new tenant</h3>
+                <p>Create the company workspace and its first administrator. The tenant is saved in the backend database.</p>
+                <div className="form-grid">
+                  <Field label="Tenant / Company Name"><input required value={tenantForm.name} onChange={(event) => setTenantForm({ ...tenantForm, name: event.target.value })} /></Field>
+                  <Field label="NCRDC Number"><input value={tenantForm.ncr} onChange={(event) => setTenantForm({ ...tenantForm, ncr: event.target.value })} /></Field>
+                  <Field label="Administrator Name"><input value={tenantForm.adminName} onChange={(event) => setTenantForm({ ...tenantForm, adminName: event.target.value })} /></Field>
+                  <Field label="Administrator Email"><input type="email" value={tenantForm.adminEmail} onChange={(event) => setTenantForm({ ...tenantForm, adminEmail: event.target.value })} /></Field>
+                </div>
+                <div className="button-row"><button className="primary" type="submit" disabled={creatingTenant}>{creatingTenant ? 'Creating Tenant…' : 'Create Tenant'}</button>{tenantCreateMessage && <span>{tenantCreateMessage}</span>}</div>
+              </form>
+              <div className="panel-card tenant-rules"><h3>Isolation rules built in</h3><ul className="clean-list"><li>Client list calls use <code>GET /api/clients</code> with <code>X-Tenant-ID</code>.</li><li>Uploads use the same header and save files under the configured tenant data directory.</li><li>Backend rejects client reads/updates when the client is not inside the active tenant.</li><li>Users in the same tenant share the same clients because they query the same tenant database.</li></ul></div>
+            </div>
+          </section>
         )}
       </main>
     </div>

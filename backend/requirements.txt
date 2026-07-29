@@ -1,7 +1,9 @@
-flask
-flask-cors
-pdfplumber
-PyPDF2
-pymupdf
-pytesseract
-pillow
+Flask==3.1.1
+flask-cors==6.0.1
+pdfplumber==0.11.7
+PyPDF2==3.0.1
+python-dateutil==2.9.0.post0
+pytesseract==0.3.13
+pypdfium2==4.30.0
+Pillow==11.1.0
+gunicorn==23.0.0

@@ -1,121 +1,212 @@
-# Fin-Tastic Render — Credit Score Routing Repair
+# Fin-Tastic Sales Coach — Refined Sales-to-Admin Workflow
 
-This complete open-access Render build for **Khusela Debt Management** keeps the encrypted Datanamix parser, client capture and banking workflow, and expands the Sales Coach into a guided consultant conversation tool.
+This is a complete local development build for **fin-tastic-sales-coach**.
+
+## What is included
+
+- Tenant-isolated database: each tenant has its own users, clients, uploads, documents, mandates, admin queue and PDA records.
+- Users inside the same tenant see the same tenant client list and database.
+- Sales consultant flow:
+  - Added top workflow tabs under the header: Client Info, Credit Report, Sales Coach, Accounts/Fees, Docs/Signature, NuPay Mandate and Admin/PDA.
+  - Added a global **Save Client** button and visible save status so captured client info is saved from any screen.
+  1. Upload credit report.
+  2. Sales Opportunity Engine determines the best route:
+     - Debt Review Sales Coach
+     - Debt Review Removal
+     - Debt Mediation
+     - Manual Review
+  3. Sales Coach gives selling points, next steps and objection handling.
+  4. Reduced amount is calculated and compared to original instalments.
+  5. Consultant sends upload-documents link, signature link and NuPay mandate.
+  6. Consultant views mandate status, cancels mandate, or sends a new mandate.
+  7. Consultant submits the client to admin.
+- Admin flow:
+  - View submitted clients.
+  - See uploaded documents, signature status, fees, reduced amounts, included creditors, NuPay mandate and PDA info.
+  - Cancel mandate and send a new one if details change.
+  - Capture PDA reference, proposal amount, payment start date and PDA status.
+
+## Run the app
+
+From this folder:
+
+```bat
+START_ALL.bat
+```
+
+Then open:
+
+```text
+http://localhost:5173
+```
+
+Manual start:
+
+```bat
+RUN_BACKEND.bat
+RUN_FRONTEND.bat
+```
+
+## Backend
+
+The Flask backend runs on:
+
+```text
+http://localhost:5000
+```
+
+Important API rule:
+
+```text
+X-Tenant-ID: liberty-credit-specialists
+X-User-ID: lib-agent-1
+```
+
+Every client/document/mandate/admin/PDA route is scoped by `X-Tenant-ID`.
+
+## Main backend routes
+
+```text
+GET    /api/tenants
+GET    /api/users
+GET    /api/clients
+POST   /api/clients
+PUT    /api/clients/<client_id>
+POST   /api/upload/credit-report
+POST   /api/clients/<client_id>/documents/request
+POST   /api/clients/<client_id>/documents/upload
+POST   /api/clients/<client_id>/signature/send
+POST   /api/clients/<client_id>/signature/mark-signed
+POST   /api/clients/<client_id>/mandate/send
+GET    /api/clients/<client_id>/mandate/status
+POST   /api/clients/<client_id>/mandate/cancel
+POST   /api/clients/<client_id>/mandate/resend
+PUT    /api/clients/<client_id>/pda
+POST   /api/clients/<client_id>/admin-submit
+GET    /api/admin/clients
+GET    /api/debug/routes
+```
+
+## Local database
+
+```text
+backend/data/sales_coach_db.json
+```
+
+Uploads are saved under:
+
+```text
+backend/uploads/<tenant_id>/
+backend/uploads/<tenant_id>/client_docs/<client_id>/
+```
+
+## Notes
+
+- NuPay and PDA are implemented as API-ready workflow placeholders. They store mandate status, reference, amount and handover data locally now. When you receive live API credentials/specs, replace the placeholder send/cancel actions with the real API calls.
+- Parser cleanup update: the backend now ignores common summary/header/noise rows such as "Total No. of accounts", enquiry rows, payment-profile rows, date rows, and weak non-creditor fragments. It also tries PDF table extraction before line-by-line fallback parsing.
+- Accounts screen cleanup update: the accounts table now has a sticky header, sticky include/creditor columns, better column widths, and a **Clean Bad Rows** button for quickly removing obvious parser noise.
+- The parser is still a safe baseline. Bureau-specific Datanamix/XDS/TransUnion/Experian/Compuscan parsing rules can still be improved once you test more reports.
+
+## Parser fix in this version
+
+- Added XDS-style name extraction for reports where fields are displayed as `First Name`, `Second Name`, `Surname`, `ID No.`, `Residential Address`, `Current Employer`, etc.
+- Added separate first name, second name and surname fields to the client profile screen.
+- Fixed the XDS account money-column order: `Open Balance`, `Current Balance`, `Instalment Amount`, `Arrears Amount`.
+- Fixed false Debt Review detection where a report only says `Debt Review Status * Nothing on Record`.
+- Added stricter XDS account row parsing for rows that wrap across lines.
+
+If old bad figures are still showing after replacing files, reset or clean the local database:
+
+```bat
+backend\data\sales_coach_db.json
+```
+
+Delete that file only if you want to remove existing local test clients and start fresh.
 
 
-## Credit score repair in this build
+## Save-client fix in this version
 
-The credit-score parser no longer accepts the first three-digit number near the score area. It now ranks labelled candidates, prioritises the **Final Score** column, ignores score-band scales and dates, and exposes the matched text and confidence to the consultant.
+- New local clients are saved with `POST /api/clients`; existing clients update with `PUT /api/clients/<client_id>`.
+- The frontend now replaces the temporary `local-*` ID with the saved backend client ID immediately after saving.
+- The backend now preserves first name, second name, surname, DOB, gender, marital status, spouse details and banking fields.
+- Portal links, document links and NuPay actions now first save the client and then use the real saved client ID.
+- A top **Save Client** button is available on every workflow tab.
 
-The Client Capture screen includes a score-verification panel. A consultant can correct the score manually when a new bureau layout is unclear; saving the correction immediately recalculates the CPI and other Sales Coach rules.
+## Login, upload and data-integrity fix in this version
 
-Validated results:
+This build fixes the issues where the app appeared to switch between admin/consultant and where uploading a new credit report could overwrite or show the previous selected client.
 
-- `REF2788037.pdf`: **553**, 99% confidence.
-- `REF2788225.pdf`: **566**, 99% confidence.
+Changes made:
 
-## Included workflow
+- Added a login/session screen. The tenant and user are selected once when entering the workspace.
+- Removed the live tenant/user dropdowns from the top bar so the role does not change while working.
+- Added a **Switch / Logout** button for intentionally changing tenant/user.
+- Client list refresh and search no longer changes the active client. A client changes only when you click it, create a new one, or upload a report.
+- Credit report upload now has two clear modes:
+  - **Upload as NEW client** — safe default and always creates a new client.
+  - **Replace credit report for selected saved client** — only updates the selected saved client.
+- Backend safety rule: `POST /api/upload/credit-report` always creates a new client, even if a stale `clientId` is sent by mistake.
+- Existing-client report replacement must use `POST /api/clients/<client_id>/credit-report/upload`.
+- Admin queue is protected by role. Only Admin and Manager users can open `/api/admin/clients`.
+- Unknown/missing credit score is no longer treated as score `0`. Score-zero DRR routing only applies when the parser actually found a score of `0`.
+- `Debt Review Status: Nothing on Record` no longer triggers a debt-review sale by itself.
+- Uploaded/manual document records are preserved even when the service route changes.
 
-- React/Vite frontend built into the Flask Docker image.
-- Render Postgres client storage.
-- Manual **New client** creation and editable client records.
-- Single or joint application selection.
-- Primary and spouse/co-applicant personal, contact, address, employment, affordability and banking information.
-- Capture-completion percentage.
-- Captured details remain in place when the same client’s report is uploaded again.
-- Duplicate ID prevention inside the tenant.
-- Password-protected PDF prompt with the server-side default password option.
-- Datanamix identity, labelled Final Score, score confidence/source, debt-review status, CPA/NLR accounts, balances, arrears and instalments.
-- Manual score verification with immediate Sales Coach recalculation.
+Recommended after replacing files:
 
-## 5 Golden Questions
+```bat
+rmdir /s /q backend\data
+rmdir /s /q backend\uploads
+START_ALL.bat
+```
 
-The Sales Coach now includes an interactive Yes/No checklist. Each question explains why it matters:
+Only delete `backend\data` if you want a clean local test database.
 
-1. Are you 18 years or older and a South African citizen?
-2. Do you bank with one of South Africa’s major banks?
-3. Is your cellphone number linked to your bank account?
-4. Is a Debt Counsellor or creditor currently debiting your bank account?
-5. Are you employed or receiving a regular income into your bank account?
+## Parser strictness update in this version
 
-A No answer does not automatically disqualify the client. The consultant must verify the reason, correct the captured details and choose the appropriate compliant next step.
+This build tightens the parser because the previous version was still importing payment-profile and history rows as accounts.
 
-## Sales Opportunity routing rules
+Changes made:
 
-The Sales Opportunity Engine now uses this exact order:
+- The generic line parser no longer imports unknown creditor rows. It only uses generic line fallback when a known creditor name is found.
+- The table parser now rejects payment-profile/history tables and requires clearer balance columns.
+- `Current Status` is no longer mistaken for `Current Balance`.
+- Unknown table creditor names must contain a finance/store/service-style signal before they are imported.
+- XDS reports prefer the XDS text parser over pdfplumber table rows when XDS rows are detected.
+- Name extraction has been improved for `Consumer Name`, `Client Name`, `Full Names`, `First Name`, `Second Name`, and `Surname` layouts.
+- The accounts screen now displays a warning that parsed accounts must be verified before admin/PDA handover.
 
-1. **Credit score exactly 0** → recommend **Debt Review Removal**.
-2. If the score is 0 and active balances remain → also recommend **Debt Mediation**.
-3. A confirmed debt-review flag → recommend **Debt Review Removal**; active balances also add **Debt Mediation**.
-4. No debt-review flag + score from **100 through 600** + **no active balances** → recommend **Credit Profile Investigation**.
-5. No debt-review flag + active home-loan or vehicle-finance balance → recommend **Debt Review**.
-6. No debt-review flag + other active balances → recommend **Debt Mediation**.
-7. Anything else → manual review.
+Important: after replacing files, reset your local test database or old wrong rows will still show:
 
-CPI is no longer triggered only because instalments are below R1,000, and a score from 601–649 does not automatically create a CPI sale.
+```bat
+rmdir /s /q backend\data
+rmdir /s /q backend\uploads
+START_ALL.bat
+```
 
-The CPI opportunity displays:
+Do this only for local testing because it deletes saved local test clients and uploads.
 
-- Total fee: **R3,000**
-- Once-off: R3,000
-- 2 months: R1,500 per month
-- 3 months: R1,000 per month
-- 4 months: R750 per month
+## Datanamix scanned-PDF OCR fix in this version
 
-## More informative Sales Coach
+This build fixes Datanamix reports that contain page images instead of embedded PDF text.
 
-Each product route now contains:
+- Added OCR fallback for scanned/image-only PDFs using Tesseract + pypdfium2.
+- Added a Datanamix-specific parser for:
+  - First name, surname, ID number, birth date, gender, marital status, phone, address and employer.
+  - Final score and debt-review flag.
+  - Debt counsellor name, telephone number, NCR registration number and debt-review status date.
+  - Consumer account status blocks: subscriber name, account number, current balance, instalment, arrears, opening balance/credit limit, account type, last paid date, open date and account status.
+- Datanamix payment-history grids are ignored so they are not imported as creditor accounts.
+- Scanned Datanamix reports skip pdf table extraction because it is slow and unreliable on image-only pages.
 
-- A suggested opening script.
-- Clear reasons for the recommendation.
-- Five product-specific qualifying questions.
-- Consultant next steps.
-- Product-specific client objections and suggested responses.
-- CPI pricing and payment options when applicable.
+For OCR to work on Windows, Tesseract OCR must be installed. If needed, install it with:
 
-Objection handling is included for Credit Profile Investigation, Debt Review, Debt Review Removal, Debt Mediation and Manual Review. The responses avoid guaranteed outcomes and require verified report data and supporting documents.
+```bat
+winget install UB-Mannheim.TesseractOCR
+```
 
-## Routing precedence
+If Windows does not detect it after installation, restart CMD/PowerShell or add this folder to PATH:
 
-1. Exact score 0 or confirmed debt-review flag → Debt Review Removal.
-2. Removal route with active balances → add Debt Mediation.
-3. No debt-review flag + score 100–600 + no balances → Credit Profile Investigation.
-4. No debt-review flag + financed-asset balance → Debt Review.
-5. No debt-review flag + other active balances → Debt Mediation.
-6. No safe automatic route → Manual Review.
-
-## Deploy to Render
-
-1. Extract this ZIP.
-2. Replace all files in the private Git repository.
-3. Commit and push.
-4. Keep this Render environment variable:
-
-   `DEFAULT_CREDIT_REPORT_PDF_PASSWORD=DN13084`
-
-5. Select **Manual Deploy → Clear build cache & deploy**.
-6. Open `https://YOUR-RENDER-URL/api/health`.
-7. Confirm `databaseReady` is `true` and `authenticationRequired` is `false`.
-
-No database migration is required because Sales Coach data is generated from the stored client/report payload.
-
-## Important open-access warning
-
-Logins remain disabled as requested. Anyone who knows the Render URL can view or change stored client information. Do not expose the service publicly with real consumer records until authentication is restored.
-
-## Validation completed
-
-- Clean `npm ci` using the public npm registry.
-- TypeScript validation and Vite production build.
-- Python compilation and Flask API smoke tests.
-- Exact score 0 with no balances → Debt Review Removal.
-- Exact score 0 with balances → Debt Review Removal plus Debt Mediation.
-- Confirmed debt-review flag with balances → Debt Review Removal plus Debt Mediation.
-- Scores 100 and 600 with no balances and no flag → CPI.
-- Score 601 with no balances → Manual Review.
-- Score 500 with balances → Debt Mediation, not CPI.
-- Instalments below R1,000 no longer trigger CPI on their own.
-- CPI payment values: R3,000 / R1,500 / R1,000 / R750.
-- `REF2788037.pdf`: score 553, 5 accounts, R2,344 active balance, routed to Debt Mediation.
-- `REF2788225.pdf`: score 566, 9 accounts, R33,119 active balance, routed to Debt Mediation.
-- Protected PDF unlock and parsing with `DN13084`.
+```text
+C:\Program Files\Tesseract-OCR
+```
