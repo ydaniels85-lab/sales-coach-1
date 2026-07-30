@@ -1,5 +1,5 @@
-FIN-TASTIC RENDER DEPLOYMENT — CREDIT SCORE PARSER REPAIR
-=========================================================
+FIN-TASTIC RENDER DEPLOYMENT — SALES COACH + CLIENT CAPTURE
+==========================================================
 
 1. Extract the ZIP.
 2. Replace the complete contents of the current private Git repository.
@@ -15,27 +15,20 @@ FIN-TASTIC RENDER DEPLOYMENT — CREDIT SCORE PARSER REPAIR
    databaseReady: true
    authenticationRequired: false
    accessMode: open
-9. Upload one of the reports and confirm the Parser Quality section shows:
-   - the correct score
-   - Final Score table row as the source
-   - parser confidence
-   - the exact matched report text
+9. Open the main service URL.
 
-SCORE REPAIR
-------------
-- The parser prioritises labelled Final Score and Credit Score values.
-- It ignores score-band scales, dates, balances and account totals.
-- It supports risk category and score values split across PDF lines.
-- It avoids choosing a numeric exception code before the final score.
-- Client Capture allows a manual score correction.
-- Saving a correction recalculates the Sales Coach immediately.
+THE UPDATE ADDS
+---------------
+- Manual New Client creation.
+- Single and Joint application capture.
+- Primary and spouse personal details.
+- Employment, income and household budget.
+- Primary and spouse banking details.
+- Expanded Sales Coach with call opening, qualifying questions and objections.
+- Credit Profile Investigation rule below R1,000 monthly instalments.
+- R3,000 fee: once-off, 2, 3 or 4 months.
 
-VERIFIED RESULTS
-----------------
-- REF2788037.pdf: score 553, confidence 99%, 5 accounts.
-- REF2788225.pdf: score 566, confidence 99%, 9 accounts.
-
-No database schema migration is required. New score metadata is stored in the existing JSON client payload.
+No database schema migration is required. New information is stored in the existing JSON client payload.
 
 WARNING
 -------

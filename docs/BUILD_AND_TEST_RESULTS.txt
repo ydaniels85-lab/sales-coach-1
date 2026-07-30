@@ -1,25 +1,20 @@
-FIN-TASTIC SALES ROUTING REPAIR VALIDATION
-============================================
+FIN-TASTIC SALES COACH + CLIENT CAPTURE VALIDATION
+==================================================
 
 PASSED
-- clean npm ci from the public npm registry
-- strict TypeScript validation
+- npm ci from public npm registry
+- TypeScript strict compile
 - Vite production build
-- backend Python compilation
-- Flask/Postgres-compatible API smoke test using temporary SQLite
-- protected-PDF password-required response
-- successful PDF unlock with DN13084
-- exact score 0 -> Debt Review Removal
-- exact score 0 plus balances -> Debt Review Removal plus Debt Mediation
-- confirmed debt-review flag plus balances -> Debt Review Removal plus Debt Mediation
-- score 100 through 600, no balance and no flag -> Credit Profile Investigation
-- score 601, no balance and no flag -> Manual Review
-- score within CPI range but with balances -> Debt Mediation or Debt Review according to account type
-- low instalments alone no longer trigger CPI
-- REF2788037.pdf: score 553, active balance R2,344, 5 accounts, Debt Mediation
-- REF2788225.pdf: score 566, active balance R33,119, 9 accounts, Debt Mediation
-
-DEPLOYMENT
-----------
-Use Render: Manual Deploy -> Clear build cache & deploy.
-Keep DEFAULT_CREDIT_REPORT_PDF_PASSWORD=DN13084.
+- backend Python compile
+- protected PDF password-required response
+- correct password DN13084
+- REF2788037.pdf: 5 accounts
+- REF2788225.pdf: 9 accounts
+- manual client creation
+- single/joint application persistence
+- primary applicant banking persistence
+- spouse/co-applicant banking persistence
+- duplicate ID prevention
+- captured details preserved during report re-upload
+- Credit Profile Investigation rule for total instalments below R1,000
+- CPI fee R3,000 and payment plans R3,000 / R1,500 / R1,000 / R750

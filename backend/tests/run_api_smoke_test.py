@@ -22,50 +22,11 @@ def main() -> None:
         from backend.app import app, initialize_database
         from backend.parser import build_sales_coach
 
-        score_zero_removal = build_sales_coach(
-            {}, 0, True, False, [],
-        )
-        assert score_zero_removal["service"] == "Debt Review Removal"
-        assert score_zero_removal["flags"]["scoreZeroRule"] is True
-        assert score_zero_removal["additionalServices"] == []
-
-        score_zero_with_balances = build_sales_coach(
-            {}, 0, True, False,
+        cpi = build_sales_coach(
+            {}, 620, True, False,
             [{
                 "included": True,
                 "currentBalance": 12000,
-                "arrears": 500,
-                "monthlyInstallment": 900,
-                "reducedAmount": 600,
-                "isAsset": False,
-                "isFurniture": False,
-            }],
-        )
-        assert score_zero_with_balances["service"] == "Debt Review Removal"
-        assert score_zero_with_balances["additionalServices"] == ["Debt Mediation"]
-        assert score_zero_with_balances["flags"]["doubleSaleCandidate"] is True
-
-        cpi_100 = build_sales_coach({}, 100, True, False, [])
-        assert cpi_100["service"] == "Credit Profile Investigation"
-        assert cpi_100["flags"]["scoreInCpiRange"] is True
-        assert cpi_100["flags"]["hasOutstandingBalances"] is False
-
-        cpi_600 = build_sales_coach({}, 600, True, False, [])
-        assert cpi_600["service"] == "Credit Profile Investigation"
-        assert cpi_600["pricing"]["onceOff"] == 3000
-        assert [plan["monthlyAmount"] for plan in cpi_600["pricing"]["paymentPlans"]] == [3000, 1500, 1000, 750]
-        assert len(cpi_600["goldenQuestions"]) == 5
-        assert len(cpi_600["objectionHandlers"]) >= 5
-
-        score_601_no_balances = build_sales_coach({}, 601, True, False, [])
-        assert score_601_no_balances["service"] == "Needs Manual Review"
-        assert score_601_no_balances["flags"]["creditProfileInvestigationCandidate"] is False
-
-        low_instalment_no_longer_cpi = build_sales_coach(
-            {}, 700, True, False,
-            [{
-                "included": True,
-                "currentBalance": 0,
                 "arrears": 0,
                 "monthlyInstallment": 900,
                 "reducedAmount": 600,
@@ -73,37 +34,10 @@ def main() -> None:
                 "isFurniture": False,
             }],
         )
-        assert low_instalment_no_longer_cpi["service"] == "Needs Manual Review"
-
-        score_500_with_balances = build_sales_coach(
-            {}, 500, True, False,
-            [{
-                "included": True,
-                "currentBalance": 12000,
-                "arrears": 0,
-                "monthlyInstallment": 1200,
-                "reducedAmount": 800,
-                "isAsset": False,
-                "isFurniture": False,
-            }],
-        )
-        assert score_500_with_balances["service"] == "Debt Mediation"
-        assert score_500_with_balances["flags"]["creditProfileInvestigationCandidate"] is False
-
-        removal_flag_with_balances = build_sales_coach(
-            {}, 400, True, True,
-            [{
-                "included": True,
-                "currentBalance": 12000,
-                "arrears": 500,
-                "monthlyInstallment": 500,
-                "reducedAmount": 350,
-                "isAsset": False,
-                "isFurniture": False,
-            }],
-        )
-        assert removal_flag_with_balances["service"] == "Debt Review Removal"
-        assert removal_flag_with_balances["additionalServices"] == ["Debt Mediation"]
+        assert cpi["service"] == "Credit Profile Investigation"
+        assert cpi["headline"] == "Potential Credit Profile Investigation sale"
+        assert cpi["pricing"]["onceOff"] == 3000
+        assert [plan["monthlyAmount"] for plan in cpi["pricing"]["paymentPlans"]] == [3000, 1500, 1000, 750]
 
         initialize_database()
         client = app.test_client()
@@ -128,10 +62,6 @@ def main() -> None:
                 "physicalAddress": "1 Main Road, Cape Town",
                 "employer": "Example Ltd",
                 "nettSalary": 15000,
-                "creditScore": 500,
-                "scoreFound": True,
-                "scoreNeedsReview": False,
-                "scoreManuallyVerified": True,
                 "bank": {
                     "accountHolder": "Test Client",
                     "bankName": "FNB",
@@ -164,10 +94,6 @@ def main() -> None:
         assert body["spouse"]["bank"]["bankName"] == "Capitec"
         assert body["fullName"] == "Test Client"
         assert body["spouse"]["fullName"] == "Joint Client"
-        assert body["creditScore"] == 500
-        assert body["scoreManuallyVerified"] is True
-        assert body["scoreNeedsReview"] is False
-        assert body["serviceType"] == "Credit Profile Investigation"
 
         report_path = Path(os.environ.get("FINTASTIC_SAMPLE_REPORT", ""))
         if sample_password and report_path.exists():
@@ -189,7 +115,7 @@ def main() -> None:
             assert correct.get_json()["client"]["report"]["bureau"] == "Datanamix"
             assert len(correct.get_json()["client"]["accounts"]) > 0
 
-        print("API smoke test passed: score-zero removal, removal-plus-mediation, CPI 100-600/no-balances/no-flag, client capture and protected-PDF flow.")
+        print("API smoke test passed: open access, client capture, joint banking, CPI pricing and protected-PDF flow.")
 
 
 if __name__ == "__main__":
