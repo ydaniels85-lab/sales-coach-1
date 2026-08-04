@@ -63,15 +63,34 @@ type PaymentPlan = {
   monthlyAmount: number;
 };
 
+type GoldenQuestion = {
+  question: string;
+  whyItMatters: string;
+};
+
+type ObjectionHandler = {
+  objection: string;
+  response: string;
+};
+
+type ScoreCandidate = {
+  score: number;
+  confidence: number;
+  source: string;
+  context: string;
+};
+
 type Coach = {
   service: string;
+  additionalServices: string[];
   urgency: string;
   headline: string;
   reasons: string[];
   openingScript: string;
+  goldenQuestions: GoldenQuestion[];
   qualifyingQuestions: string[];
   nextSteps: string[];
-  objectionHandlers: string[];
+  objectionHandlers: ObjectionHandler[];
   pricing: null | {
     currency: string;
     onceOff: number;
@@ -90,6 +109,8 @@ type Coach = {
     hasAsset: boolean;
     hasFurniture: boolean;
     scoreZeroRule: boolean;
+    scoreInCpiRange: boolean;
+    hasOutstandingBalances: boolean;
     doubleSaleCandidate: boolean;
     creditProfileInvestigationCandidate: boolean;
   };
@@ -102,6 +123,12 @@ type Client = PersonDetails & {
   creditScore: number | null;
   scoreFound: boolean;
   riskCategory: string;
+  scoreConfidence: number;
+  scoreSource: string;
+  scoreRawContext: string;
+  scoreCandidates: ScoreCandidate[];
+  scoreNeedsReview: boolean;
+  scoreManuallyVerified: boolean;
   debtReviewListed: boolean;
   debtReviewDetail: string;
   serviceType: string;
@@ -170,13 +197,21 @@ const EMPTY_PERSON: PersonDetails = {
 
 const EMPTY_COACH: Coach = {
   service: 'Needs Manual Review',
+  additionalServices: [],
   urgency: 'Low',
   headline: 'Manual review required',
   reasons: ['Upload a credit report to activate the Sales Opportunity Engine.'],
   openingScript: 'Capture the client objective and supporting information before selecting a service.',
+  goldenQuestions: [
+    { question: 'Are you 18 years or older and a South African citizen?', whyItMatters: 'Confirms basic identity and service eligibility.' },
+    { question: "Do you bank with one of South Africa's major banks?", whyItMatters: 'Helps confirm mandate and debit-order compatibility.' },
+    { question: 'Is your cellphone number linked to your bank account?', whyItMatters: 'Important for bank-linked verification and DebiCheck.' },
+    { question: 'Is a Debt Counsellor or creditor currently debiting your bank account?', whyItMatters: 'Identifies current collections and debit-date conflicts.' },
+    { question: 'Are you employed or receiving a regular income into your bank account?', whyItMatters: 'Confirms affordability and payment sustainability.' }
+  ],
   qualifyingQuestions: ['What result is the client trying to achieve?'],
   nextSteps: ['Capture the client details and upload the credit report.'],
-  objectionHandlers: ['Do not promise an outcome before the report and documents are verified.'],
+  objectionHandlers: [{ objection: 'Can you guarantee the result?', response: 'Do not promise an outcome before the report and documents are verified.' }],
   pricing: null,
   totals: { outstanding: 0, arrears: 0, originalInstalment: 0, reducedInstalment: 0, estimatedRelief: 0 },
   flags: {
@@ -184,6 +219,8 @@ const EMPTY_COACH: Coach = {
     hasAsset: false,
     hasFurniture: false,
     scoreZeroRule: false,
+    scoreInCpiRange: false,
+    hasOutstandingBalances: false,
     doubleSaleCandidate: false,
     creditProfileInvestigationCandidate: false
   }
@@ -212,6 +249,12 @@ function normalizeClient(value: Partial<Client>): Client {
     creditScore: value.creditScore ?? null,
     scoreFound: Boolean(value.scoreFound),
     riskCategory: value.riskCategory || '',
+    scoreConfidence: Number(value.scoreConfidence || 0),
+    scoreSource: value.scoreSource || '',
+    scoreRawContext: value.scoreRawContext || '',
+    scoreCandidates: Array.isArray(value.scoreCandidates) ? value.scoreCandidates : [],
+    scoreNeedsReview: Boolean(value.scoreNeedsReview),
+    scoreManuallyVerified: Boolean(value.scoreManuallyVerified),
     debtReviewListed: Boolean(value.debtReviewListed),
     debtReviewDetail: value.debtReviewDetail || '',
     serviceType: value.serviceType || value.coach?.service || 'Needs Manual Review',
@@ -224,9 +267,16 @@ function normalizeClient(value: Partial<Client>): Client {
       ...(value.coach || {}),
       reasons: value.coach?.reasons || EMPTY_COACH.reasons,
       openingScript: value.coach?.openingScript || EMPTY_COACH.openingScript,
+      goldenQuestions: Array.isArray(value.coach?.goldenQuestions) && value.coach!.goldenQuestions.length
+        ? value.coach!.goldenQuestions
+        : EMPTY_COACH.goldenQuestions,
       qualifyingQuestions: value.coach?.qualifyingQuestions || EMPTY_COACH.qualifyingQuestions,
       nextSteps: value.coach?.nextSteps || EMPTY_COACH.nextSteps,
-      objectionHandlers: value.coach?.objectionHandlers || EMPTY_COACH.objectionHandlers,
+      objectionHandlers: Array.isArray(value.coach?.objectionHandlers)
+        ? value.coach!.objectionHandlers.map((item) => typeof item === 'string'
+          ? { objection: 'Consultant reminder', response: item }
+          : item)
+        : EMPTY_COACH.objectionHandlers,
       totals: { ...EMPTY_COACH.totals, ...(value.coach?.totals || {}) },
       flags: { ...EMPTY_COACH.flags, ...(value.coach?.flags || {}) },
       pricing: value.coach?.pricing || null
@@ -465,6 +515,13 @@ function PersonForm(props: {
   );
 }
 
+function scoreStatus(client: Client) {
+  if (client.scoreManuallyVerified) return { label: 'Manually verified', className: 'verified' };
+  if (!client.scoreFound) return { label: 'Score not found', className: 'review' };
+  if (client.scoreNeedsReview) return { label: 'Needs verification', className: 'review' };
+  return { label: `Parser confidence ${client.scoreConfidence}%`, className: 'verified' };
+}
+
 function ClientCapture(props: { client: Client; onSaved: (client: Client) => void; onOpenCoach: () => void }) {
   const [draft, setDraft] = useState<Client>(() => normalizeClient(props.client));
   const [busy, setBusy] = useState(false);
@@ -530,6 +587,56 @@ function ClientCapture(props: { client: Client; onSaved: (client: Client) => voi
         </div>
       </section>
 
+      <section className={`panel score-verification ${scoreStatus(draft).className}`}>
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Credit score verification</p>
+            <h2>Confirm the client’s final bureau score</h2>
+            <p>The parser now uses the labelled Final Score row and ignores score-band numbers, dates, balances and account totals.</p>
+          </div>
+          <span className={`score-status ${scoreStatus(draft).className}`}>{scoreStatus(draft).label}</span>
+        </div>
+        <div className="score-verification-grid">
+          <label>
+            Client credit score
+            <input
+              type="number"
+              min="0"
+              max="999"
+              inputMode="numeric"
+              value={draft.creditScore ?? ''}
+              placeholder="Enter score shown on report"
+              onChange={(event) => {
+                const raw = event.target.value;
+                setDraft((current) => ({
+                  ...current,
+                  creditScore: raw === '' ? null : Math.max(0, Math.min(999, Number(raw))),
+                  scoreFound: raw !== '',
+                  scoreNeedsReview: raw === '',
+                  scoreManuallyVerified: raw !== ''
+                }));
+              }}
+            />
+          </label>
+          <article>
+            <span>Detected from</span>
+            <strong>{draft.scoreSource || 'No labelled score detected'}</strong>
+            <small>{draft.scoreRawContext || 'Upload a report or capture the score manually.'}</small>
+          </article>
+          <article>
+            <span>Risk category</span>
+            <strong>{draft.riskCategory || 'Not detected'}</strong>
+            <small>{draft.scoreCandidates.length ? `${draft.scoreCandidates.length} labelled candidate${draft.scoreCandidates.length === 1 ? '' : 's'} checked` : 'No candidate values available'}</small>
+          </article>
+        </div>
+        {draft.scoreNeedsReview && !draft.scoreManuallyVerified && (
+          <div className="alert warn">Check the number printed under “Final Score” in the PDF before presenting the Sales Coach recommendation.</div>
+        )}
+        {draft.scoreManuallyVerified && (
+          <div className="alert success">This score will be treated as manually verified when you save the client.</div>
+        )}
+      </section>
+
       <PersonForm title="Primary applicant personal information" subtitle="Primary applicant" person={draft} setPersonField={setPrimary} setBankField={setPrimaryBank} />
 
       {draft.applicationType === 'Joint' && (
@@ -553,21 +660,65 @@ function ClientCapture(props: { client: Client; onSaved: (client: Client) => voi
 }
 
 function SalesCoachPanel({ coach }: { coach: Coach }) {
+  const [goldenAnswers, setGoldenAnswers] = useState<Record<number, 'yes' | 'no'>>({});
+
+  useEffect(() => {
+    setGoldenAnswers({});
+  }, [coach.service, coach.headline]);
+
+  const answeredCount = Object.keys(goldenAnswers).length;
+  const cpiTriggers = [
+    coach.flags.scoreInCpiRange ? 'Credit score between 100 and 600' : '',
+    !coach.flags.hasOutstandingBalances ? 'No active balances' : '',
+    !coach.flags.debtReviewListed ? 'No debt-review flag' : ''
+  ].filter(Boolean);
+
   return (
     <section className={`panel coach-panel ${coach.flags.creditProfileInvestigationCandidate ? 'cpi' : ''}`}>
       <div className="section-heading"><div><p className="eyebrow">Sales Opportunity Engine</p><h2>{coach.headline}</h2></div><div className="coach-badges"><span className={`urgency ${coach.urgency.toLowerCase()}`}>{coach.urgency}</span><span className="service-badge">{coach.service}</span></div></div>
 
       {coach.flags.creditProfileInvestigationCandidate && (
         <div className="opportunity-callout">
-          <div><span>New opportunity rule</span><strong>Not under debt review + total instalments below R1,000 pm</strong></div>
+          <div><span>CPI opportunity rule active</span><strong>{cpiTriggers.join(' · ')}</strong></div>
           <b>Potential Credit Profile Investigation sale</b>
         </div>
       )}
 
+      {coach.flags.scoreZeroRule && (
+        <div className="opportunity-callout">
+          <div><span>Exact score-zero rule active</span><strong>Credit score 0 routes to Debt Review Removal</strong></div>
+          <b>{coach.flags.doubleSaleCandidate ? 'Removal plus Mediation opportunity' : 'Debt Review Removal opportunity'}</b>
+        </div>
+      )}
+
+      {coach.additionalServices.length > 0 && (
+        <div className="alert warn"><strong>Additional recommendation:</strong> {coach.additionalServices.join(', ')} because active balances remain.</div>
+      )}
+
+      <section className="golden-section">
+        <div className="golden-heading">
+          <div><p className="eyebrow">Consultant qualification checklist</p><h3>5 Golden Questions</h3><p>Ask these before presenting the service or sending a debit-order mandate.</p></div>
+          <div className="golden-progress"><strong>{answeredCount}/5</strong><span>answered</span></div>
+        </div>
+        <div className="golden-grid">
+          {coach.goldenQuestions.map((item, index) => (
+            <article className={`golden-card ${goldenAnswers[index] || ''}`} key={`${item.question}-${index}`}>
+              <div className="golden-number">{index + 1}</div>
+              <div className="golden-copy"><strong>{item.question}</strong><small>{item.whyItMatters}</small></div>
+              <div className="answer-buttons">
+                <button type="button" className={goldenAnswers[index] === 'yes' ? 'selected yes' : ''} onClick={() => setGoldenAnswers((current) => ({ ...current, [index]: 'yes' }))}>Yes</button>
+                <button type="button" className={goldenAnswers[index] === 'no' ? 'selected no' : ''} onClick={() => setGoldenAnswers((current) => ({ ...current, [index]: 'no' }))}>No</button>
+              </div>
+            </article>
+          ))}
+        </div>
+        <div className="golden-note">A “No” answer does not automatically disqualify the client. Verify the reason, capture the correct details and choose a compliant next step.</div>
+      </section>
+
       <div className="coach-grid">
         <article className="script-card"><span>Suggested call opening</span><blockquote>{coach.openingScript}</blockquote></article>
         <article><h3>Why this route</h3><ul>{coach.reasons.map((reason, index) => <li key={`${reason}-${index}`}>{reason}</li>)}</ul></article>
-        <article><h3>Qualifying questions</h3><ol>{coach.qualifyingQuestions.map((question, index) => <li key={`${question}-${index}`}>{question}</li>)}</ol></article>
+        <article><h3>Product qualifying questions</h3><ol>{coach.qualifyingQuestions.map((question, index) => <li key={`${question}-${index}`}>{question}</li>)}</ol></article>
         <article><h3>Consultant next steps</h3><ol>{coach.nextSteps.map((step, index) => <li key={`${step}-${index}`}>{step}</li>)}</ol></article>
       </div>
 
@@ -580,7 +731,17 @@ function SalesCoachPanel({ coach }: { coach: Coach }) {
         </div>
       )}
 
-      <details className="objection-box"><summary>Responsible objection handling</summary><ul>{coach.objectionHandlers.map((handler, index) => <li key={`${handler}-${index}`}>{handler}</li>)}</ul></details>
+      <section className="objection-section">
+        <div className="section-heading"><div><p className="eyebrow">Conversation support</p><h3>Objection handling</h3></div><span className="pill">{coach.objectionHandlers.length} responses</span></div>
+        <div className="objection-grid">
+          {coach.objectionHandlers.map((handler, index) => (
+            <details className="objection-card" key={`${handler.objection}-${index}`} open={index === 0}>
+              <summary><span>Client says</span><strong>“{handler.objection}”</strong></summary>
+              <div><span>Suggested response</span><p>{handler.response}</p></div>
+            </details>
+          ))}
+        </div>
+      </section>
     </section>
   );
 }
@@ -594,7 +755,7 @@ function ClientDetail(props: { client: Client; warnings?: string[]; confidence?:
         <div>
           <p className="eyebrow">{client.report.bureau || 'Client record'} {client.report.reportReference ? `· ${client.report.reportReference}` : ''}</p>
           <h2>{client.fullName || 'Unnamed client'}</h2>
-          <p>{client.idNumber || 'ID not captured'} · {client.applicationType} · Score {client.scoreFound ? client.creditScore : 'Not found'} · {client.status}</p>
+          <p>{client.idNumber || 'ID not captured'} · {client.applicationType} · Score {client.scoreFound ? client.creditScore : 'Not found'} · {client.scoreManuallyVerified ? 'Manually verified' : client.scoreSource || 'Unverified'} · {client.status}</p>
         </div>
         <div className="hero-actions"><span className={`urgency ${client.coach.urgency.toLowerCase()}`}>{client.coach.urgency}</span><strong>{client.serviceType}</strong><div className="button-row"><button className="ghost light" onClick={props.onEdit}>Edit client details</button><button className="ghost light" onClick={props.onUpload}>Upload report</button></div></div>
       </section>
@@ -602,8 +763,14 @@ function ClientDetail(props: { client: Client; warnings?: string[]; confidence?:
       {(Boolean(props.warnings?.length) || props.confidence !== undefined) && (
         <section className="panel compact-panel">
           <div className="section-heading"><h3>Parser quality</h3>{props.confidence !== undefined && <span className="pill">Confidence {props.confidence}%</span>}</div>
+          <div className={`score-quality-line ${scoreStatus(client).className}`}>
+            <div><span>Credit score</span><strong>{client.scoreFound ? client.creditScore : 'Not found'}</strong></div>
+            <div><span>Source</span><strong>{client.scoreSource || 'Manual verification required'}</strong></div>
+            <div><span>Status</span><strong>{scoreStatus(client).label}</strong></div>
+          </div>
+          {client.scoreRawContext && <div className="score-context"><span>Matched report text</span><code>{client.scoreRawContext}</code></div>}
           {(props.warnings || []).map((warning) => <div className="alert warn" key={warning}>{warning}</div>)}
-          {!props.warnings?.length && <div className="alert success">The report passed the current parser checks.</div>}
+          {!props.warnings?.length && !client.scoreNeedsReview && <div className="alert success">The report passed the current parser checks.</div>}
         </section>
       )}
 
@@ -625,7 +792,7 @@ function ClientDetail(props: { client: Client; warnings?: string[]; confidence?:
         </div>
       </section>
 
-      <SalesCoachPanel coach={client.coach} />
+      <SalesCoachPanel key={client.id} coach={client.coach} />
 
       <section className="panel">
         <div className="section-heading"><div><p className="eyebrow">Parsed debt accounts</p><h2>{client.accounts.length} accounts · {included.length} included</h2></div><span className="pill">CPA + NLR</span></div>

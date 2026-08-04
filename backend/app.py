@@ -17,7 +17,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from .parser import PdfPasswordRequired, UnsupportedReport, build_sales_coach, parse_credit_report
 
 APP_NAME = "Fin-Tastic Render API"
-APP_VERSION = "2026.07.render-open-access-sales-coach-2"
+APP_VERSION = "2026.07.render-open-access-score-repair-4"
 BASE_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = BASE_DIR.parent
 FRONTEND_DIST = PROJECT_DIR / "frontend" / "dist"
@@ -225,6 +225,12 @@ def default_client_payload() -> Dict[str, Any]:
         "creditScore": None,
         "scoreFound": False,
         "riskCategory": "",
+        "scoreConfidence": 0,
+        "scoreSource": "",
+        "scoreRawContext": "",
+        "scoreCandidates": [],
+        "scoreNeedsReview": True,
+        "scoreManuallyVerified": False,
         "debtReviewListed": False,
         "debtReviewDetail": "",
         "status": "Client Details Captured",
@@ -316,6 +322,25 @@ def normalize_client_payload(incoming: Dict[str, Any], existing: Optional[Dict[s
     for field in ("grossSalary", "nettSalary", "monthlyLivingExpenses"):
         payload[field] = _as_float(payload.get(field))
         spouse[field] = _as_float(spouse.get(field))
+
+    score_value = payload.get("creditScore")
+    try:
+        parsed_score = int(score_value) if score_value not in (None, "") else None
+    except (TypeError, ValueError):
+        parsed_score = None
+    if parsed_score is not None and not 0 <= parsed_score <= 999:
+        parsed_score = None
+    payload["creditScore"] = parsed_score
+    payload["scoreFound"] = parsed_score is not None
+    payload["scoreConfidence"] = int(payload.get("scoreConfidence") or 0)
+    payload["scoreSource"] = str(payload.get("scoreSource") or "")
+    payload["scoreRawContext"] = str(payload.get("scoreRawContext") or "")
+    payload["scoreCandidates"] = payload.get("scoreCandidates") if isinstance(payload.get("scoreCandidates"), list) else []
+    payload["scoreManuallyVerified"] = bool(payload.get("scoreManuallyVerified"))
+    payload["scoreNeedsReview"] = bool(
+        payload.get("scoreNeedsReview")
+        and not payload["scoreManuallyVerified"]
+    ) or parsed_score is None
 
     accounts = payload.get("accounts")
     payload["accounts"] = accounts if isinstance(accounts, list) else []

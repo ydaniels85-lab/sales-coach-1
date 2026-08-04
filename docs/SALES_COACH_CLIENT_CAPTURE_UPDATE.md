@@ -2,7 +2,7 @@
 
 ## Client workflow
 
-A consultant can now either create a client manually or upload a report first. A successful report upload opens the Client Capture screen automatically. The consultant selects Single or Joint and completes the required personal, contact, address, employment, affordability and banking information.
+A consultant can create a client manually or upload a report first. A successful report upload opens the Client Capture screen automatically. The consultant selects Single or Joint and completes the required personal, contact, address, employment, affordability and banking information.
 
 The backend exposes:
 
@@ -13,9 +13,12 @@ The backend exposes:
 
 Captured fields are merged with a later report upload instead of being erased.
 
-## Credit Profile Investigation rule
+## Current Credit Profile Investigation rule
 
-The rule checks the sum of `monthlyInstallment` for included accounts. It activates when the sum is greater than zero and below R1,000 and `debtReviewListed` is false.
+The CPI rule has been expanded. It activates when debt review is not confirmed and either:
+
+- the verified credit score is between 100 and 600 inclusive; and
+- there are no active outstanding balances and no debt-review flag.
 
 Pricing returned by the API:
 
@@ -34,7 +37,9 @@ Pricing returned by the API:
 ## Routing precedence
 
 1. Confirmed debt review.
-2. Credit Profile Investigation low-instalment rule.
+2. Credit Profile Investigation low-score or low-instalment rule.
 3. Asset-protection Debt Review rule.
 4. Debt Mediation for active balances.
 5. Manual Review.
+
+See `SALES_COACH_GOLDEN_QUESTIONS_CPI_UPDATE.md` for the five Golden Questions and objection-handler payloads.
