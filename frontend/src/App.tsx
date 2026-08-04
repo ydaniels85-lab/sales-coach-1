@@ -1,11 +1,58 @@
 import { ChangeEvent, FormEvent, ReactNode, useEffect, useMemo, useState } from 'react';
 
-type ViewKey = 'dashboard' | 'clients' | 'upload' | 'profile' | 'coach' | 'accounts' | 'mandate' | 'documents' | 'workflow' | 'admin' | 'settings';
+type ViewKey = 'dashboard' | 'clients' | 'upload' | 'profile' | 'budget' | 'coach' | 'accounts' | 'mandate' | 'documents' | 'workflow' | 'admin' | 'knowledge' | 'settings';
 type ServiceType = 'Debt Review Sales Coach' | 'Debt Review Removal' | 'Debt Mediation' | 'Needs Manual Review';
 type Urgency = 'Low' | 'Medium' | 'High';
 
-type Tenant = { id: string; name: string; ncr: string; userCount: number; clientCount: number };
+type Tenant = { id: string; name: string; tradingName?: string; fullName?: string; ncr: string; phone?: string; fax?: string; email?: string; finalRegistrationDate?: string; physicalAddress?: string; postalAddress?: string; town?: string; userCount: number; clientCount: number };
 type TenantUser = { id: string; name: string; role: string; email: string };
+type ConsultantMetric = {
+  rank: number;
+  userId: string;
+  name: string;
+  role: string;
+  email: string;
+  leadsGenerated: number;
+  uploadedReports: number;
+  activeClients: number;
+  clientsSubmitted: number;
+  reducedInstallments: number;
+  removalFees: number;
+  dcValue: number;
+  documentsReceived: number;
+  requiredDocuments: number;
+  documentCompletionRate: number;
+  performanceScore: number;
+  lastActivityAt?: string;
+};
+
+type ConsultantDashboardSummary = {
+  tenantClients: number;
+  uploadedReports: number;
+  leadsGenerated: number;
+  dcValue: number;
+  reducedInstallments: number;
+  removalFees: number;
+  documentsReceived: number;
+  clientsSubmitted: number;
+  consultants: number;
+};
+
+type CommissionSnapshot = {
+  id: string;
+  createdAt: string;
+  createdBy: string;
+  period: string;
+  summary: ConsultantDashboardSummary;
+  leaderboard: ConsultantMetric[];
+  notes?: string;
+};
+
+type KnowledgeModule = { id: string; title: string; service: string; summary: string; keyPoints: string[]; salesAngles: string[] };
+type KnowledgeQuestion = { id: string; moduleId: string; service: string; question: string; options: string[] };
+type AssessmentReview = { id: string; moduleId: string; service: string; question: string; selectedIndex: number; correctIndex: number; correct: boolean };
+type AssessmentResult = { id?: string; scorePercent: number; correct: number; total: number; level: string; passed: boolean; submittedAt?: string; review?: AssessmentReview[] };
+type KnowledgeRank = { rank: number; userId: string; name: string; email: string; scorePercent: number; correct: number; total: number; level: string; passed: boolean; submittedAt?: string; attempts: number };
 
 type Applicant = {
   firstName: string;
@@ -38,6 +85,22 @@ type BankDetails = {
   mandateAccepted: boolean;
 };
 
+type LivingBudget = {
+  rentOrBond: number;
+  groceries: number;
+  electricityWater: number;
+  transport: number;
+  schoolFees: number;
+  insurance: number;
+  medical: number;
+  cellphoneInternet: number;
+  clothing: number;
+  maintenance: number;
+  otherLivingExpenses: number;
+  dependants: number;
+  notes: string;
+};
+
 type DebtAccount = {
   id: string;
   creditorName: string;
@@ -66,12 +129,21 @@ type CoachResult = {
   reasons: string[];
   nextSteps: string[];
   objectionHandlers: string[];
+  painPoints: string[];
+  budgetBenefits: string[];
+  tonalityTips: string[];
+  talkTrack: string[];
   totals: {
     outstanding: number;
     arrears: number;
     originalInstalment: number;
     reducedInstalment: number;
     estimatedRelief: number;
+    householdIncome?: number;
+    livingExpenses?: number;
+    availableAfterLivingExpenses?: number;
+    availableAfterReducedPayment?: number;
+    savingsPercent?: number;
   };
   flags: {
     debtReviewListed: boolean;
@@ -85,9 +157,16 @@ type CoachResult = {
 type DocumentItem = { name: string; status: string; filename?: string; uploadedAt?: string; source?: string; notes?: string };
 type ClientDocuments = { required: string[]; items: DocumentItem[]; requestStatus: string; sentAt?: string; uploadLink?: string };
 type ClientSignature = { status: string; link?: string; sentAt?: string; signedAt?: string };
-type NuPayMandate = { status: string; mandateId?: string; link?: string; amount: number; debitDay: string; sentAt?: string; cancelledAt?: string; history: { at: string; action: string; amount?: number; debitDay?: string; reason?: string }[] };
+type NuPayMandateKind = 'removal' | 'mediation';
+type NuPayComponents = { reducedPayment: number; drrServiceFeeTotal: number; drrServiceFeeMonthly: number; totalMonthlyCollection: number; ongoingMonthlyCollection?: number; drrFeeMonthsRemaining?: number; collectionMode?: string; product?: string; reducedPaymentLabel?: string; drrFeeLabel?: string; startDate?: string; mandateKind?: NuPayMandateKind };
+type NuPayMandate = { status: string; mandateId?: string; link?: string; amount: number; debitDay: string; startDate?: string; mandateType?: NuPayMandateKind; drrMonths?: number; includesDrrFee?: boolean; components?: NuPayComponents; sentAt?: string; cancelledAt?: string; acceptedAt?: string; history: { at: string; action: string; amount?: number; debitDay?: string; startDate?: string; reason?: string; drrMonths?: number; includesDrrFee?: boolean; mandateType?: string }[] };
+type NuPayMandates = { removal: NuPayMandate; mediation: NuPayMandate };
 type AdminHandover = { status: string; submittedAt?: string; submittedBy?: string; notes?: string; snapshot?: Record<string, unknown> };
 type PdaInfo = { pdaName: string; pdaReference: string; proposalAmount: number; paymentStartDate: string; status: string; notes: string };
+type AdminTask = { id: string; service: ServiceType; sequence?: number; stepCode?: string; phase: string; label: string; status: string; notes?: string; completedAt?: string; updatedAt?: string; ownerRole?: string; dueBusinessDays?: number | null; dueFrom?: string; regulationRef?: string; evidenceRequired?: string; ncaMinimum?: boolean; gate?: string; outcome?: string };
+type AdminCreditorAction = { id: string; service: ServiceType; creditorName: string; accountNumber: string; status: string; currentBalance: number; originalInstallment: number; proposedAmount: number; response?: string; notes?: string; updatedAt?: string };
+type AdminFeeItem = { id: string; label: string; service: ServiceType; amount: number; status: string; dueDate?: string; paidAt?: string; notes?: string };
+type AdminWorkflow = { services: ServiceType[]; activeService: ServiceType; overallStatus: string; tasks: AdminTask[]; creditorActions: AdminCreditorAction[]; feeItems: AdminFeeItem[]; lastUpdatedAt?: string };
 
 type Client = Applicant & {
   id: string;
@@ -96,19 +175,23 @@ type Client = Applicant & {
   applicationType: 'Single' | 'Joint';
   spouse: Applicant;
   bank: BankDetails;
+  budget: LivingBudget;
   creditScore: number | null;
   scoreFound?: boolean;
   debtReviewListed: boolean;
   notes: string;
   status: string;
   serviceType: ServiceType;
+  serviceTypes?: ServiceType[];
   accounts: DebtAccount[];
   coach?: CoachResult;
   portalLinks?: { signatureLink?: string; uploadLink?: string; createdAt?: string };
   documents?: ClientDocuments;
   signature?: ClientSignature;
   nupayMandate?: NuPayMandate;
+  nupayMandates?: NuPayMandates;
   adminHandover?: AdminHandover;
+  adminWorkflow?: AdminWorkflow;
   pdaInfo?: PdaInfo;
   createdAt?: string;
   updatedAt?: string;
@@ -152,6 +235,22 @@ const emptyApplicant = (): Applicant => ({
   nettSalary: 0
 });
 
+const defaultLivingBudget = (): LivingBudget => ({
+  rentOrBond: 0,
+  groceries: 0,
+  electricityWater: 0,
+  transport: 0,
+  schoolFees: 0,
+  insurance: 0,
+  medical: 0,
+  cellphoneInternet: 0,
+  clothing: 0,
+  maintenance: 0,
+  otherLivingExpenses: 0,
+  dependants: 0,
+  notes: ''
+});
+
 const emptyCoach = (): CoachResult => ({
   service: 'Needs Manual Review',
   urgency: 'Low',
@@ -159,17 +258,20 @@ const emptyCoach = (): CoachResult => ({
   reasons: ['Add a client or upload a credit report to generate the sales route.'],
   nextSteps: ['Open the client list, select a tenant, and start with a new client or upload a report.'],
   objectionHandlers: [],
-  totals: { outstanding: 0, arrears: 0, originalInstalment: 0, reducedInstalment: 0, estimatedRelief: 0 },
+  painPoints: [],
+  budgetBenefits: [],
+  tonalityTips: [],
+  talkTrack: [],
+  totals: { outstanding: 0, arrears: 0, originalInstalment: 0, reducedInstalment: 0, estimatedRelief: 0, householdIncome: 0, livingExpenses: 0, availableAfterLivingExpenses: 0, availableAfterReducedPayment: 0, savingsPercent: 0 },
   flags: { debtReviewListed: false, hasAsset: false, hasFurniture: false, scoreZeroRule: false, doubleSaleCandidate: false }
 });
 
 
 const requiredDocumentsFor = (service: ServiceType): string[] => {
-  const common = ['POPIA consent', 'ID copy', 'Proof of address', 'Latest payslip', '3 months bank statements', 'Credit report'];
-  if (service === 'Debt Review Removal') return [...common, 'DR removal mandate', 'NCT/court order if available', 'Paid-up letters where applicable', 'Clearance or termination evidence', 'NuPay mandate'];
-  if (service === 'Debt Review Sales Coach') return [...common, 'Form 16', '17.1 notice', 'COB request authority', 'Budget and affordability sheet', 'NuPay mandate'];
-  if (service === 'Debt Mediation') return [...common, 'Mediation mandate', 'Creditor proposal authority', 'Settlement/arrangement mandate', 'NuPay mandate'];
-  return [...common, 'Service mandate', 'NuPay mandate'];
+  if (service === 'Debt Review Sales Coach') return ['Signed Form 16', 'ID copy', 'Latest payslip', '3 months bank statements'];
+  if (service === 'Debt Review Removal') return ['ID copy', '3 months bank statements', 'Signed Form 17.W / 17.3', 'Latest payslip', 'Power of Attorney (POA)'];
+  if (service === 'Debt Mediation') return ['ID copy', '3 months bank statements', 'Latest payslip', 'Power of Attorney (POA)'];
+  return ['ID copy', 'Latest payslip', '3 months bank statements'];
 };
 
 const defaultDocuments = (service: ServiceType): ClientDocuments => ({
@@ -181,19 +283,280 @@ const defaultDocuments = (service: ServiceType): ClientDocuments => ({
 });
 
 const defaultSignature = (): ClientSignature => ({ status: 'Not Sent', link: '', sentAt: '', signedAt: '' });
-const defaultNuPay = (): NuPayMandate => ({ status: 'Not Sent', mandateId: '', link: '', amount: 0, debitDay: '25', sentAt: '', cancelledAt: '', history: [] });
+const defaultNuPay = (mandateType?: NuPayMandateKind): NuPayMandate => ({
+  status: 'Not Sent',
+  mandateId: '',
+  link: '',
+  amount: 0,
+  debitDay: '25',
+  startDate: '',
+  mandateType,
+  drrMonths: mandateType === 'removal' ? 3 : 0,
+  includesDrrFee: mandateType === 'removal',
+  components: { reducedPayment: 0, drrServiceFeeTotal: 0, drrServiceFeeMonthly: 0, totalMonthlyCollection: 0, ongoingMonthlyCollection: 0, drrFeeMonthsRemaining: 0, collectionMode: 'Not Sent', mandateKind: mandateType },
+  sentAt: '',
+  cancelledAt: '',
+  history: []
+});
+const defaultSplitMandates = (): NuPayMandates => ({ removal: defaultNuPay('removal'), mediation: defaultNuPay('mediation') });
 const defaultAdminHandover = (): AdminHandover => ({ status: 'Not Submitted', submittedAt: '', submittedBy: '', notes: '', snapshot: {} });
 const defaultPda = (): PdaInfo => ({ pdaName: '', pdaReference: '', proposalAmount: 0, paymentStartDate: '', status: 'Not Submitted', notes: '' });
+
+const uniqueServices = (items: ServiceType[]): ServiceType[] => Array.from(new Set(items.filter(Boolean))) as ServiceType[];
+
+const servicesForAdmin = (client: Client, coach: CoachResult): ServiceType[] => {
+  const primary = (client.serviceType || coach.service || 'Needs Manual Review') as ServiceType;
+  const services: ServiceType[] = [];
+  if (primary === 'Debt Review Removal') {
+    services.push('Debt Review Removal');
+    if ((coach.flags?.doubleSaleCandidate || coach.totals.outstanding > 0) && coach.totals.outstanding > 0) services.push('Debt Mediation');
+  } else if (primary === 'Debt Review Sales Coach') {
+    services.push('Debt Review Sales Coach');
+  } else if (primary === 'Debt Mediation') {
+    services.push('Debt Mediation');
+  } else {
+    services.push('Needs Manual Review');
+  }
+  return uniqueServices(services);
+};
+
+
+const clampDrrMonths = (months: number | string | undefined): number => {
+  const parsed = Math.round(toNumber(months || 3));
+  if (parsed < 1) return 1;
+  if (parsed > 3) return 3;
+  return parsed;
+};
+
+const mandateBreakdownFor = (client: Client, coach: CoachResult, months?: number | string): { amount: number; drrMonths: number; includesDrrFee: boolean; components: NuPayComponents } => {
+  const services = client.adminWorkflow?.services || client.serviceTypes || servicesForAdmin(client, coach);
+  const includesDrrFee = services.includes('Debt Review Removal') || client.serviceType === 'Debt Review Removal' || coach.service === 'Debt Review Removal';
+  const reducedPaymentRaw = toNumber(coach.totals.reducedInstalment);
+  const includesMediationPayment = services.includes('Debt Mediation') || client.serviceType === 'Debt Mediation' || coach.service === 'Debt Mediation' || reducedPaymentRaw > 0;
+  const drrMonthsValue = includesDrrFee ? clampDrrMonths(months || client.nupayMandate?.drrMonths || 3) : 0;
+  const reducedPayment = includesMediationPayment ? reducedPaymentRaw : 0;
+  const drrServiceFeeTotal = includesDrrFee ? drrFee : 0;
+  const drrServiceFeeMonthly = includesDrrFee && drrMonthsValue ? Number((drrServiceFeeTotal / drrMonthsValue).toFixed(2)) : 0;
+  const totalMonthlyCollection = Number((reducedPayment + drrServiceFeeMonthly).toFixed(2));
+  const collectionMode = includesDrrFee && reducedPayment > 0
+    ? 'DebiCheck: DRR service fee plus mediation reduced payment'
+    : includesDrrFee
+      ? 'DebiCheck: DRR service fee only'
+      : reducedPayment > 0
+        ? 'DebiCheck: mediation reduced payment only'
+        : 'No NuPay DebiCheck collection configured';
+  return {
+    amount: totalMonthlyCollection,
+    drrMonths: drrMonthsValue,
+    includesDrrFee,
+    components: {
+      reducedPayment,
+      drrServiceFeeTotal,
+      drrServiceFeeMonthly,
+      totalMonthlyCollection,
+      ongoingMonthlyCollection: reducedPayment,
+      drrFeeMonthsRemaining: drrMonthsValue,
+      collectionMode,
+      product: 'NuPay DebiCheck',
+      reducedPaymentLabel: 'Debt Mediation / reduced creditor payment',
+      drrFeeLabel: 'Debt Review Removal service fee'
+    }
+  };
+};
+
+
+type SplitDebiCheckPart = { applicable: boolean; amount: number; debitDay: string; startDate: string; drrMonths: number; includesDrrFee: boolean; components: NuPayComponents };
+const splitDebiCheckFor = (client: Client, coach: CoachResult, months?: number | string): { removal: SplitDebiCheckPart; mediation: SplitDebiCheckPart } => {
+  const services = client.adminWorkflow?.services || client.serviceTypes || servicesForAdmin(client, coach);
+  const hasRemoval = services.includes('Debt Review Removal') || client.serviceType === 'Debt Review Removal' || coach.service === 'Debt Review Removal';
+  const hasMediation = services.includes('Debt Mediation') || client.serviceType === 'Debt Mediation' || coach.service === 'Debt Mediation';
+  const monthsValue = hasRemoval ? clampDrrMonths(months || client.nupayMandates?.removal?.drrMonths || client.nupayMandate?.drrMonths || 3) : 0;
+  const removalMonthly = hasRemoval && monthsValue ? Number((drrFee / monthsValue).toFixed(2)) : 0;
+  const mediationMonthly = hasMediation ? Number(toNumber(coach.totals.reducedInstalment).toFixed(2)) : 0;
+  const defaultDebitDay = client.bank?.debitDay || '25';
+  return {
+    removal: {
+      applicable: hasRemoval,
+      amount: removalMonthly,
+      debitDay: client.nupayMandates?.removal?.debitDay || defaultDebitDay,
+      startDate: client.nupayMandates?.removal?.startDate || '',
+      drrMonths: monthsValue,
+      includesDrrFee: hasRemoval,
+      components: {
+        reducedPayment: 0,
+        drrServiceFeeTotal: hasRemoval ? drrFee : 0,
+        drrServiceFeeMonthly: removalMonthly,
+        totalMonthlyCollection: removalMonthly,
+        ongoingMonthlyCollection: 0,
+        drrFeeMonthsRemaining: monthsValue,
+        collectionMode: hasRemoval ? 'Separate DebiCheck: Debt Review Removal service fee' : 'Not applicable',
+        product: 'NuPay DebiCheck',
+        drrFeeLabel: 'Debt Review Removal service fee',
+        startDate: client.nupayMandates?.removal?.startDate || '',
+        mandateKind: 'removal'
+      }
+    },
+    mediation: {
+      applicable: hasMediation && mediationMonthly > 0,
+      amount: mediationMonthly,
+      debitDay: client.nupayMandates?.mediation?.debitDay || defaultDebitDay,
+      startDate: client.nupayMandates?.mediation?.startDate || '',
+      drrMonths: 0,
+      includesDrrFee: false,
+      components: {
+        reducedPayment: mediationMonthly,
+        drrServiceFeeTotal: 0,
+        drrServiceFeeMonthly: 0,
+        totalMonthlyCollection: mediationMonthly,
+        ongoingMonthlyCollection: mediationMonthly,
+        drrFeeMonthsRemaining: 0,
+        collectionMode: mediationMonthly > 0 ? 'Separate DebiCheck: Debt Mediation reduced payment' : 'Not applicable',
+        product: 'NuPay DebiCheck',
+        reducedPaymentLabel: 'Debt Mediation / reduced creditor payment',
+        startDate: client.nupayMandates?.mediation?.startDate || '',
+        mandateKind: 'mediation'
+      }
+    }
+  };
+};
+
+
+const adminTaskTemplates = (services: ServiceType[]): AdminTask[] => {
+  const rows: AdminTask[] = [];
+  const slug = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  const addStep = (
+    service: ServiceType,
+    sequence: number,
+    phase: string,
+    label: string,
+    options: Partial<AdminTask> = {}
+  ) => rows.push({
+    id: `${slug(service)}-step-${String(sequence).padStart(2, '0')}-${slug(label).slice(0, 42)}`,
+    service,
+    sequence,
+    stepCode: `${slug(service).toUpperCase().slice(0, 3)}-${String(sequence).padStart(2, '0')}`,
+    phase,
+    label,
+    status: 'Not Started',
+    notes: '',
+    ownerRole: options.ownerRole || (phase.includes('PDA') || phase.includes('Aftercare') || phase.includes('Monitoring') ? 'Admin/PDA' : 'Admin'),
+    dueBusinessDays: options.dueBusinessDays ?? null,
+    dueFrom: options.dueFrom || '',
+    regulationRef: options.regulationRef || '',
+    evidenceRequired: options.evidenceRequired || '',
+    ncaMinimum: Boolean(options.ncaMinimum),
+    gate: options.gate || '',
+    outcome: options.outcome || ''
+  });
+
+  services.forEach((service) => {
+    if (service === 'Debt Review Sales Coach') {
+      const dr = 'NCA s86 / Regulation 24 operational control';
+      addStep(service, 1, 'Consultant Handover', 'Receive consultant handover and lock selected service as Debt Review', { evidenceRequired: 'Consultant handover snapshot with client info, accounts, reduced amount and notes', outcome: 'Admin owns the file' });
+      addStep(service, 2, 'Intake Verification', 'Verify client profile, ID number, contact details, marital/joint status and spouse details', { evidenceRequired: 'Updated client profile', ncaMinimum: true });
+      addStep(service, 3, 'Required Client Documents', 'Confirm only required client docs: signed Form 16, ID copy, latest payslip and 3 months bank statements', { evidenceRequired: 'Signed Form 16, ID copy, latest payslip, 3 months bank statements', ncaMinimum: true, gate: 'Do not start statutory notices until complete' });
+      addStep(service, 4, 'Credit Agreement Review', 'Verify all included credit agreements from credit report and mark excluded, closed, legal or prescribed-candidate accounts', { evidenceRequired: 'Included-creditor schedule', ncaMinimum: true });
+      addStep(service, 5, 'Budget / Affordability', 'Verify nett income, living-expense budget, dependants, bank details and available amount before proposal', { evidenceRequired: 'Captured living budget and affordability summary', ncaMinimum: true });
+      addStep(service, 6, 'Form 16 Accepted', 'Record Form 16 received/signed date and open the legal debt-review application timer', { dueFrom: 'Signed Form 16', regulationRef: 'NCA s86 application control', evidenceRequired: 'Form 16 date and proof of receipt', ncaMinimum: true, gate: 'This is where the legal debt-review process starts' });
+      addStep(service, 7, 'Form 17.1', 'Send Form 17.1/application notice to every included credit provider and registered credit bureau', { dueBusinessDays: 5, dueFrom: 'Form 16/application received', regulationRef: dr, evidenceRequired: '17.1 copies and proof of dispatch per creditor/bureau', ncaMinimum: true });
+      addStep(service, 8, 'COB Requests', 'Request Certificates of Balance from every included creditor and create follow-up dates', { dueBusinessDays: 5, dueFrom: '17.1 dispatch', regulationRef: dr, evidenceRequired: 'COB request log and creditor communication proof', ncaMinimum: true });
+      addStep(service, 9, 'COB Capture', 'Capture COB balances, arrears, instalments, interest/rates and account status per creditor', { evidenceRequired: 'COB copy per creditor', ncaMinimum: true });
+      addStep(service, 10, 'COB Reconciliation', 'Compare COB values against parsed credit-report figures and resolve discrepancies', { evidenceRequired: 'Reconciled creditor schedule with notes', ncaMinimum: true });
+      addStep(service, 11, 'Assessment', 'Complete over-indebtedness assessment using income, living budget, bank statements, payslip and COBs', { dueBusinessDays: 30, dueFrom: 'Debt-review application date', regulationRef: 'NCA s86(6) assessment control', evidenceRequired: 'Assessment worksheet', ncaMinimum: true });
+      addStep(service, 12, 'Assessment', 'Check reckless-credit/legal-action indicators and flag accounts requiring legal/compliance review', { evidenceRequired: 'Reckless/legal risk notes', ncaMinimum: true });
+      addStep(service, 13, 'Form 17.2 Decision', 'Issue Form 17.2 outcome: rejected/not over-indebted or accepted/over-indebted/restructuring', { dueBusinessDays: 30, dueFrom: 'Debt-review application date', regulationRef: 'NCA s86 / Regulation 24 decision notification', evidenceRequired: 'Form 17.2 and proof of dispatch', ncaMinimum: true, gate: 'If rejected, stop Debt Review workflow and close or move to mediation' });
+      addStep(service, 14, 'Proposal', 'Prepare restructuring proposal using available amount and included creditor schedule', { evidenceRequired: 'Proposal calculation and creditor schedule', ncaMinimum: true });
+      addStep(service, 15, 'Creditor Negotiation', 'Send proposal to every included creditor and track accepted, rejected, counter-offer or no response', { evidenceRequired: 'Proposal dispatch proof and response register', ncaMinimum: true });
+      addStep(service, 16, 'Legal Pack', 'Prepare consent order, NCT or magistrates court pack based on responses and case route', { dueBusinessDays: 60, dueFrom: 'Debt-review application date', regulationRef: 'NCA s86(8), s87 and s86(10) risk control', evidenceRequired: 'Legal pack, case/reference number or submission proof', ncaMinimum: true });
+      addStep(service, 17, 'PDA Setup', 'Capture PDA name, reference, proposed distribution amount, debit day and first payment date', { evidenceRequired: 'PDA reference/payment schedule', ncaMinimum: true, ownerRole: 'Admin/PDA' });
+      addStep(service, 18, 'Active Debt Review', 'Move case into active monitoring only after proposal/order/payment setup is confirmed', { evidenceRequired: 'Active status note and first-payment plan', ownerRole: 'Admin/PDA' });
+      addStep(service, 19, 'Aftercare', 'Monitor monthly PDA payments, missed payments, disputes, balance updates and client changes', { evidenceRequired: 'Monthly aftercare/payment notes', ownerRole: 'Admin/PDA' });
+      addStep(service, 20, 'Variation', 'If affordability changes, capture new budget/payslip/bank statements and run variation/re-proposal path', { evidenceRequired: 'Variation pack or no-change note', ownerRole: 'Admin/PDA' });
+      addStep(service, 21, 'Paid-Up Tracking', 'Collect paid-up letters/settlement confirmations and update included accounts', { evidenceRequired: 'Paid-up letters and settlement confirmations', ownerRole: 'Admin/PDA' });
+      addStep(service, 22, 'Form 19 Clearance', 'Issue Form 19 only when clearance requirements are met and all eligible obligations are satisfied', { regulationRef: 'NCA s71 / NCR Form 19', evidenceRequired: 'Form 19, paid-up proof and debt counsellor approval', ncaMinimum: true, ownerRole: 'Admin/PDA', gate: 'This is the successful legal end of Debt Review' });
+      addStep(service, 23, 'Bureau Closure', 'Send clearance/update to bureaus/NCR records and verify debt-review flag removal/update', { evidenceRequired: 'Bureau update proof and final credit-report/status check', ncaMinimum: true, ownerRole: 'Admin/PDA' });
+      addStep(service, 24, 'Closed', 'Notify client, lock audit trail and close the admin file', { evidenceRequired: 'Client closure notice and final audit note', ownerRole: 'Admin/PDA', outcome: 'Debt Review file completed' });
+    }
+    if (service === 'Debt Review Removal') {
+      addStep(service, 1, 'Removal Intake', 'Receive consultant handover and lock selected service as Debt Review Removal', { evidenceRequired: 'Consultant handover snapshot' });
+      addStep(service, 2, 'Required Client Documents', 'Confirm only required client docs: ID copy, 3 months bank statements, signed Form 17.W/17.3, latest payslip and POA', { evidenceRequired: 'ID, 3 months bank statements, signed 17.W/17.3, latest payslip, POA', ncaMinimum: true });
+      addStep(service, 3, 'Status Verification', 'Verify actual debt-review status from credit report/NCR/bureau/previous debt counsellor information', { evidenceRequired: 'Debt-review status evidence', ncaMinimum: true });
+      addStep(service, 4, 'Route Decision', 'Classify route: pre-17.2, post-17.2, court/NCT order, paid-up/clearance, incorrect bureau flag or legal review', { evidenceRequired: 'Removal route decision note', ncaMinimum: true, gate: 'Do not promise removal until the legal route is known' });
+      addStep(service, 5, 'Fee / Mandate', 'Confirm R7,000 DRR service fee split and NuPay DebiCheck collection status', { evidenceRequired: 'Accepted NuPay DebiCheck / fee record', ncaMinimum: true });
+      addStep(service, 6, 'Removal Pack', 'Prepare removal/upliftment pack according to the verified route', { evidenceRequired: 'Removal pack and supporting documents', ncaMinimum: true });
+      addStep(service, 7, 'Submission', 'Submit bureau/NCR/court/NCT/previous-DC update action and store proof', { evidenceRequired: 'Submission proof', ncaMinimum: true });
+      addStep(service, 8, 'Confirmation', 'Track confirmation and verify credit-report/bureau update', { evidenceRequired: 'Confirmation letter/status update/final report', ncaMinimum: true });
+      addStep(service, 9, 'Post Removal', 'If balances remain, continue only the Debt Mediation workflow for those accounts', { evidenceRequired: 'Remaining-balance and mediation note' });
+      addStep(service, 10, 'Closed', 'Notify client and close the DRR admin file', { evidenceRequired: 'Client closure notice' });
+    }
+    if (service === 'Debt Mediation') {
+      addStep(service, 1, 'Mediation Intake', 'Receive consultant handover and lock selected service as Debt Mediation', { evidenceRequired: 'Consultant handover snapshot' });
+      addStep(service, 2, 'Required Client Documents', 'Confirm only required client docs: ID copy, 3 months bank statements, latest payslip and POA', { evidenceRequired: 'ID, 3 months bank statements, latest payslip, POA', ncaMinimum: true });
+      addStep(service, 3, 'Authority / Limits', 'Confirm client authority and make clear that mediation is not statutory Debt Review protection', { evidenceRequired: 'POA/authority and disclosure note', ncaMinimum: true });
+      addStep(service, 4, 'Budget / Affordability', 'Verify income, living budget, available amount and bank details', { evidenceRequired: 'Captured affordability summary', ncaMinimum: true });
+      addStep(service, 5, 'Creditor Schedule', 'Confirm included creditors and remove excluded, closed or non-negotiated accounts', { evidenceRequired: 'Mediation creditor schedule', ncaMinimum: true });
+      addStep(service, 6, 'Proposal', 'Prepare reduced-payment proposal per creditor using balance, arrears, original instalment and reduced amount', { evidenceRequired: 'Proposal pack', ncaMinimum: true });
+      addStep(service, 7, 'Creditor Dispatch', 'Send proposal to every included creditor and store proof', { evidenceRequired: 'Email/proof of dispatch', ncaMinimum: true });
+      addStep(service, 8, 'Negotiation', 'Track acceptance, rejection, counter-offer and escalation per creditor', { evidenceRequired: 'Creditor response register', ncaMinimum: true });
+      addStep(service, 9, 'NuPay / Collection', 'Send or confirm NuPay DebiCheck for the ongoing reduced payment only', { evidenceRequired: 'Accepted mandate and payment schedule', ncaMinimum: true, ownerRole: 'Admin/PDA' });
+      addStep(service, 10, 'Monitoring', 'Monitor first payment, creditor responses and client/creditor status notes', { evidenceRequired: 'Payment and status notes', ownerRole: 'Admin/PDA' });
+      addStep(service, 11, 'Closed / Active', 'Move to active monitoring or close when arrangement is completed/cancelled', { evidenceRequired: 'Closure or active-monitoring note', ownerRole: 'Admin/PDA' });
+    }
+    if (service === 'Needs Manual Review') {
+      addStep(service, 1, 'Manual Review', 'Review parser output and select the correct service route before sending statutory documents or sales promises', { evidenceRequired: 'Manual-review note', ncaMinimum: true });
+      addStep(service, 2, 'Manual Review', 'Confirm required documents and compliance risk before admin processing', { evidenceRequired: 'Admin decision note', ncaMinimum: true });
+    }
+  });
+  return rows;
+};
+
+const defaultAdminWorkflowFor = (client: Client, coach: CoachResult): AdminWorkflow => {
+  const services = servicesForAdmin(client, coach);
+  const tasks = adminTaskTemplates(services);
+  const creditorActions: AdminCreditorAction[] = (client.accounts || []).filter((account) => account.included).map((account) => ({
+    id: account.id,
+    service: services.includes('Debt Mediation') ? 'Debt Mediation' : services[0],
+    creditorName: account.creditorName,
+    accountNumber: account.accountNumber,
+    status: 'Not Contacted',
+    currentBalance: toNumber(account.currentBalance),
+    originalInstallment: toNumber(account.monthlyInstallment),
+    proposedAmount: toNumber(account.reducedAmount),
+    response: '',
+    notes: ''
+  }));
+  const feeItems: AdminFeeItem[] = [];
+  if (services.includes('Debt Review Removal')) feeItems.push({ id: 'drr-service-fee', label: 'Debt Review Removal service fee', service: 'Debt Review Removal', amount: drrFee, status: 'Not Invoiced', notes: 'Can be split over 1 to 3 months.' });
+  if (coach.totals.reducedInstalment > 0) feeItems.push({ id: 'reduced-payment-proposal', label: 'Reduced payment / NuPay proposal', service: services.includes('Debt Mediation') ? 'Debt Mediation' : services[0], amount: coach.totals.reducedInstalment, status: client.nupayMandate?.status || 'Not Sent', notes: 'Must match affordability and mandate.' });
+  return { services, activeService: services[0], overallStatus: 'Handover Received', tasks, creditorActions, feeItems, lastUpdatedAt: '' };
+};
+
+const mergeAdminWorkflow = (client: Client, coach: CoachResult): AdminWorkflow => {
+  const generated = defaultAdminWorkflowFor(client, coach);
+  const existing = client.adminWorkflow;
+  if (!existing) return generated;
+  const existingTasks = new Map((existing.tasks || []).map((task) => [task.id, task]));
+  const existingCreditors = new Map((existing.creditorActions || []).map((item) => [item.id, item]));
+  const existingFees = new Map((existing.feeItems || []).map((item) => [item.id, item]));
+  return {
+    ...generated,
+    activeService: (existing.activeService || generated.activeService) as ServiceType,
+    overallStatus: existing.overallStatus || generated.overallStatus,
+    tasks: generated.tasks.map((task) => ({ ...task, ...(existingTasks.get(task.id) || {}) })),
+    creditorActions: generated.creditorActions.map((item) => ({ ...item, ...(existingCreditors.get(item.id) || {}) })),
+    feeItems: generated.feeItems.map((item) => ({ ...item, ...(existingFees.get(item.id) || {}) })),
+    lastUpdatedAt: existing.lastUpdatedAt || generated.lastUpdatedAt
+  };
+};
 
 const withWorkflowDefaults = (client: Client): Client => {
   const service = (client.serviceType || client.coach?.service || 'Needs Manual Review') as ServiceType;
   const required = requiredDocumentsFor(service);
   const previousItems = client.documents?.items || [];
   const existingItems = new Map(previousItems.map((item) => [item.name, item]));
-  const extraItems = previousItems.filter((item) => !required.includes(item.name));
   const documents: ClientDocuments = {
     required,
-    items: [...required.map((name) => existingItems.get(name) || { name, status: 'Missing' }), ...extraItems],
+    items: required.map((name) => existingItems.get(name) || { name, status: 'Missing' }),
     requestStatus: client.documents?.requestStatus || 'Not Sent',
     sentAt: client.documents?.sentAt || '',
     uploadLink: client.documents?.uploadLink || client.portalLinks?.uploadLink || ''
@@ -201,13 +564,38 @@ const withWorkflowDefaults = (client: Client): Client => {
   return {
     ...client,
     bank: client.bank || { accountHolder: '', bankName: '', accountType: '', branchCode: '', accountNumber: '', debitDay: '25', mandateAccepted: false },
+    budget: { ...defaultLivingBudget(), ...(client.budget || {}) },
     spouse: client.spouse || emptyApplicant(),
     accounts: client.accounts || [],
     documents,
     signature: { ...defaultSignature(), ...(client.signature || {}), link: client.signature?.link || client.portalLinks?.signatureLink || '' },
-    nupayMandate: { ...defaultNuPay(), ...(client.nupayMandate || {}), amount: toNumber(client.nupayMandate?.amount || client.coach?.totals.reducedInstalment || 0), debitDay: client.nupayMandate?.debitDay || client.bank?.debitDay || '25', history: client.nupayMandate?.history || [] },
+    nupayMandate: (() => {
+      const coachForMandate = client.coach || emptyCoach();
+      const breakdown = mandateBreakdownFor(client, coachForMandate, client.nupayMandate?.drrMonths || 3);
+      const storedAmount = toNumber(client.nupayMandate?.amount || 0);
+      const shouldUseCalculated = !storedAmount || (breakdown.includesDrrFee && storedAmount <= breakdown.components.reducedPayment + 0.01);
+      return {
+        ...defaultNuPay(),
+        ...(client.nupayMandate || {}),
+        amount: shouldUseCalculated ? breakdown.amount : storedAmount,
+        debitDay: client.nupayMandate?.debitDay || client.bank?.debitDay || '25',
+        drrMonths: client.nupayMandate?.drrMonths || breakdown.drrMonths,
+        includesDrrFee: breakdown.includesDrrFee,
+        components: client.nupayMandate?.components || breakdown.components,
+        history: client.nupayMandate?.history || []
+      };
+    })(),
+    nupayMandates: (() => {
+      const splitDefaults = defaultSplitMandates();
+      return {
+        removal: { ...splitDefaults.removal, ...(client.nupayMandates?.removal || {}), mandateType: 'removal', history: client.nupayMandates?.removal?.history || [] },
+        mediation: { ...splitDefaults.mediation, ...(client.nupayMandates?.mediation || {}), mandateType: 'mediation', history: client.nupayMandates?.mediation?.history || [] }
+      };
+    })(),
     adminHandover: { ...defaultAdminHandover(), ...(client.adminHandover || {}) },
-    pdaInfo: { ...defaultPda(), ...(client.pdaInfo || {}), proposalAmount: toNumber(client.pdaInfo?.proposalAmount || client.coach?.totals.reducedInstalment || 0) }
+    pdaInfo: { ...defaultPda(), ...(client.pdaInfo || {}), proposalAmount: toNumber(client.pdaInfo?.proposalAmount || client.coach?.totals.reducedInstalment || 0) },
+    serviceTypes: mergeAdminWorkflow(client, client.coach || emptyCoach()).services,
+    adminWorkflow: mergeAdminWorkflow(client, client.coach || emptyCoach())
   };
 };
 
@@ -220,17 +608,20 @@ const newLocalClient = (tenantId: string, userId: string): Client => ({
   fullName: 'New Client',
   spouse: emptyApplicant(),
   bank: { accountHolder: '', bankName: '', accountType: '', branchCode: '', accountNumber: '', debitDay: '25', mandateAccepted: false },
+  budget: defaultLivingBudget(),
   creditScore: null,
   scoreFound: false,
   debtReviewListed: false,
   notes: '',
   status: 'Lead Received',
   serviceType: 'Needs Manual Review',
+  serviceTypes: ['Needs Manual Review'],
   accounts: [],
   coach: emptyCoach(),
   documents: defaultDocuments('Needs Manual Review'),
   signature: defaultSignature(),
   nupayMandate: defaultNuPay(),
+  nupayMandates: defaultSplitMandates(),
   adminHandover: defaultAdminHandover(),
   pdaInfo: defaultPda()
 });
@@ -246,6 +637,12 @@ function toNumber(value: string | number | boolean | undefined): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function livingExpenseTotal(budget: LivingBudget | undefined): number {
+  const item = { ...defaultLivingBudget(), ...(budget || {}) };
+  return ['rentOrBond', 'groceries', 'electricityWater', 'transport', 'schoolFees', 'insurance', 'medical', 'cellphoneInternet', 'clothing', 'maintenance', 'otherLivingExpenses']
+    .reduce((total, key) => total + toNumber(item[key as keyof LivingBudget] as number), 0);
+}
+
 function suggestReducedAmount(balance: number, installment: number): number {
   if (balance <= 0 && installment <= 0) return 0;
   const balanceBased = balance * 0.015;
@@ -256,11 +653,17 @@ function suggestReducedAmount(balance: number, installment: number): number {
 }
 
 function isBadParsedAccount(account: DebtAccount): boolean {
-  const creditor = String(account.creditorName || '').trim().toLowerCase();
+  const rawCreditor = String(account.creditorName || '').trim();
+  const creditor = rawCreditor.toLowerCase();
   const accountNumber = String(account.accountNumber || '').trim();
   const badWords = ['total no', 'total number', 'counts', 'payment profile', 'account summary', 'enquiry', 'friday', 'monday', 'tuesday', 'wednesday', 'thursday', 'saturday', 'sunday', 'months in arrears'];
   if (!creditor || creditor === 'unknown creditor') return true;
   if (badWords.some((word) => creditor.includes(word))) return true;
+  const letters = (rawCreditor.match(/[A-Za-z]/g) || []).length;
+  const digits = (rawCreditor.match(/\d/g) || []).length;
+  if (letters === 0 && digits >= 4) return true;
+  if (digits >= 5 && digits > letters * 2) return true;
+  if (/^[A-Za-z]?\d[\d\- /]{4,}$/.test(rawCreditor)) return true;
   const weakOnly = creditor.split(/\W+/).filter(Boolean).every((word) => ['total', 'no', 'of', 'account', 'accounts', 'credit', 'current', 'status', 'balance'].includes(word));
   if (weakOnly) return true;
   const largestValue = Math.max(toNumber(account.openingBalance), toNumber(account.currentBalance), toNumber(account.arrears), toNumber(account.monthlyInstallment), toNumber(account.reducedAmount));
@@ -274,12 +677,23 @@ function evaluateCoach(client: Client, accounts: DebtAccount[]): CoachResult {
   const arrears = included.reduce((sum, account) => sum + toNumber(account.arrears), 0);
   const originalInstalment = included.reduce((sum, account) => sum + toNumber(account.monthlyInstallment), 0);
   const reducedInstalment = included.reduce((sum, account) => sum + toNumber(account.reducedAmount), 0);
+  const estimatedRelief = Math.max(0, originalInstalment - reducedInstalment);
+  const savingsPercent = originalInstalment > 0 ? Math.round((estimatedRelief / originalInstalment) * 100) : 0;
+  const householdIncome = toNumber(client.nettSalary) + (client.applicationType === 'Joint' ? toNumber(client.spouse?.nettSalary) : 0);
+  const livingExpenses = livingExpenseTotal(client.budget);
+  const availableAfterLivingExpenses = householdIncome - livingExpenses;
+  const availableAfterOriginalPayments = availableAfterLivingExpenses - originalInstalment;
+  const availableAfterReducedPayment = availableAfterLivingExpenses - reducedInstalment;
   const hasAsset = included.some((account) => account.isAsset || /vehicle|home loan|bond|mortgage|wesbank|mfc/i.test(account.creditorName));
   const hasFurniture = included.some((account) => account.isFurniture || /russells|bradlows|lewis|furniture|beares|jd/i.test(account.creditorName));
   const scoreIsKnown = Boolean(client.scoreFound) && client.creditScore !== null && client.creditScore !== undefined && String(client.creditScore) !== '';
   const numericScore = scoreIsKnown ? Number(client.creditScore) : null;
   const scoreZeroRule = scoreIsKnown && numericScore === 0;
   const debtReviewListed = Boolean(client.debtReviewListed || scoreZeroRule);
+  const selectedServices = Array.isArray(client.serviceTypes) ? client.serviceTypes : [];
+  const selectedRemovalService = client.serviceType === 'Debt Review Removal' || selectedServices.includes('Debt Review Removal');
+  const noActiveBalances = outstanding <= 0 && originalInstalment <= 0 && arrears <= 0;
+  const noBalanceRemovalLead = noActiveBalances && (debtReviewListed || selectedRemovalService);
 
   let service: ServiceType = 'Debt Mediation';
   let urgency: Urgency = 'Medium';
@@ -287,8 +701,18 @@ function evaluateCoach(client: Client, accounts: DebtAccount[]): CoachResult {
   const reasons: string[] = [];
   let nextSteps: string[] = [];
   let objectionHandlers: string[] = [];
+  const painPoints: string[] = [];
+  const budgetBenefits: string[] = [];
+  const tonalityTips: string[] = [];
+  const talkTrack: string[] = [];
 
-  if (debtReviewListed) {
+  if (noBalanceRemovalLead) {
+    service = 'Debt Review Removal';
+    urgency = 'High';
+    headline = 'Debt Review Removal: clear the flag and restore credit-worthiness';
+    reasons.push('No active balances or monthly instalments are showing, so the sale should not be positioned as debt reduction.');
+    reasons.push('Focus on verifying and removing the debt-review flag so the client can become credit-worthy again.');
+  } else if (debtReviewListed) {
     service = 'Debt Review Removal';
     urgency = 'High';
     headline = 'Debt Review Removal lead';
@@ -317,17 +741,65 @@ function evaluateCoach(client: Client, accounts: DebtAccount[]): CoachResult {
   }
 
   if (hasFurniture) reasons.push('Furniture accounts detected. Tag them because clients often ask whether household goods are at risk.');
-  if (originalInstalment > 0) reasons.push(`Estimated instalment relief is ${currency(Math.max(0, originalInstalment - reducedInstalment))} before final affordability checks.`);
+  if (originalInstalment > 0) reasons.push(`Estimated instalment relief is ${currency(estimatedRelief)} before final affordability checks.`);
+
+  if (householdIncome > 0 && livingExpenses > 0) {
+    const livingRatio = Math.round((livingExpenses / householdIncome) * 100);
+    painPoints.push(`Living expenses are using about ${livingRatio}% of household nett income before debt repayments.`);
+  }
+  if (originalInstalment > 0 && householdIncome > 0) {
+    if (availableAfterOriginalPayments < 0) {
+      painPoints.push(`Before the proposed reduction, the client is short by ${currency(Math.abs(availableAfterOriginalPayments))} after living expenses and normal instalments.`);
+    } else {
+      painPoints.push(`Before the proposed reduction, only ${currency(availableAfterOriginalPayments)} remains after living expenses and normal instalments.`);
+    }
+  }
+  if (arrears > 0) painPoints.push(`Arrears of ${currency(arrears)} show that the pressure is already visible, not only theoretical.`);
+  if (estimatedRelief > 0) {
+    budgetBenefits.push(`The proposed reduction can free up about ${currency(estimatedRelief)} per month, roughly ${savingsPercent}% less than current instalments.`);
+    budgetBenefits.push(`That saving can be positioned as breathing room for groceries, transport, electricity and keeping the payment plan consistent.`);
+  }
+  if (availableAfterReducedPayment >= 0 && reducedInstalment > 0) {
+    budgetBenefits.push(`After living expenses and the proposed payment, the budget still shows ${currency(availableAfterReducedPayment)} available.`);
+  } else if (reducedInstalment > 0) {
+    budgetBenefits.push(`The current reduced proposal still does not fit the captured budget. Lower the reduced amounts before promising affordability.`);
+  }
+
+  if (noBalanceRemovalLead) {
+    painPoints.push('The pressure point is no longer monthly debt relief; it is the debt-review flag still blocking the client from being seen as credit-worthy.');
+    painPoints.push('With no balances showing, the client may feel “I am finished paying”, but the bureau/status flag can still stop approvals.');
+    budgetBenefits.push('The main benefit is restoring borrowing power and credibility, not lowering an instalment.');
+    budgetBenefits.push('Once the flag is correctly removed, the client may have a better chance of qualifying for future credit, vehicle finance, home finance, rental checks, cellphone contracts and business opportunities, subject to lender assessment.');
+    budgetBenefits.push('The conversation should position the R7,000 removal fee as a clean-up and status-restoration service, not a payment-plan saving.');
+    talkTrack.push('“The good news is that your report is not showing active balances to restructure. That means our focus is not mediation today — it is getting the debt-review flag removed correctly.”');
+    talkTrack.push('“When that flag remains, credit providers can still treat you as high risk even if you have paid your accounts. Removing it helps you start rebuilding your credit-worthiness.”');
+    talkTrack.push('“The benefit is not only today’s report; it is what becomes possible again afterwards — applying with a cleaner profile and rebuilding trust with lenders.”');
+  }
+
+  tonalityTips.push(noBalanceRemovalLead ? 'Use a positive, future-focused tone: “You have done the hard part by clearing the balances; now we need to clean up the status so your profile can move forward.”' : 'Use a calm, protective tone: “I can see why this has become stressful, let’s work from the numbers.”');
+  tonalityTips.push('Do not shame the client or sound excited about their hardship; speak like you are helping them regain control.');
+  tonalityTips.push('Ask permission before giving advice: “Can I show you what the budget is telling us?”');
+  tonalityTips.push('Anchor the sale on relief and stability, not fear. Avoid guaranteeing approvals, removals or legal outcomes.');
+
+  talkTrack.push(`“Based on your budget, your household income is ${currency(householdIncome)} and your living expenses are ${currency(livingExpenses)}.”`);
+  if (estimatedRelief > 0) talkTrack.push(`“Your current instalments are about ${currency(originalInstalment)}. The proposed amount is ${currency(reducedInstalment)}, which could free up around ${currency(estimatedRelief)} every month.”`);
+  if (availableAfterOriginalPayments < 0) talkTrack.push(`“Right now the numbers show a shortfall before we even look at emergencies. That is why a structured solution is important.”`);
+  if (availableAfterReducedPayment >= 0 && reducedInstalment > 0) talkTrack.push(`“With the reduced amount, the budget becomes more manageable because there is still an estimated ${currency(availableAfterReducedPayment)} left after living expenses and the proposal.”`);
 
   if (service === 'Debt Review Removal') {
-    nextSteps = ['Confirm if the client is actively under debt review or only still bureau-flagged.', 'Request ID, proof of address, latest payslip/bank statement, and existing NCT/court documents.', 'Explain the R7,000 removal fee and offer 1-3 months.', 'If balances remain, present mediation as the second sale.'];
-    objectionHandlers = ['I already paid my debt counsellor: explain that payment history and current flag status still need to be verified.', 'I only want my name cleared: explain removal is step one; active balances may still affect score recovery.'];
+    if (noBalanceRemovalLead) {
+      nextSteps = ['Verify that there are no remaining active balances that need mediation.', 'Confirm the debt-review flag/status and whether the route is 17.W, 17.3, clearance/bureau correction, court/NCT or previous-DC follow-up.', 'Request ID, 3 months bank statements, latest payslip, signed 17.W/17.3 and POA.', 'Send NuPay DebiCheck for the R7,000 removal fee split over 1-3 months if the client accepts.', 'Submit the removal pack and track bureau/status confirmation until the profile is updated.'];
+      objectionHandlers = ['I have no debt, why must I pay anything: explain that the service is not for balances; it is to remove the status barrier that can keep causing declined applications.', 'Will my score go up immediately: explain that removal can make the profile eligible to rebuild, but no score or approval can be guaranteed.', 'I already paid everyone: agree with the client, then explain that paid-up accounts and a removed debt-review flag are two different outcomes and both must be reflected correctly.', 'I only need a loan now: keep the tone honest — first remove the flag and rebuild credit-worthiness; do not promise a loan approval.'];
+    } else {
+      nextSteps = ['Confirm if the client is actively under debt review or only still bureau-flagged.', 'Request ID, 3 months bank statements, latest payslip, signed 17.W/17.3 and POA.', 'Explain the R7,000 removal fee and offer 1-3 months.', 'If balances remain, present mediation as the second sale.'];
+      objectionHandlers = ['I already paid my debt counsellor: explain that payment history and current flag status still need to be verified.', 'I only want my name cleared: explain removal is step one; active balances may still affect score recovery.', `I cannot afford another fee: acknowledge it, then show the monthly split and compare it to the ${currency(estimatedRelief)} potential monthly relief where mediation also applies.`];
+    }
   } else if (service === 'Debt Review Sales Coach') {
-    nextSteps = ['Confirm income, expenses, and whether the client is behind on home/vehicle payments.', 'Position the call around protecting the asset and creating a sustainable plan.', 'Prepare Form 16, consent, credit report, and COB workflow if the client qualifies.'];
-    objectionHandlers = ['I do not want debt review: explain that assets at risk need urgent protection and eligibility must be assessed first.', 'I can catch up next month: compare arrears and instalments against nett income before accepting that answer.'];
+    nextSteps = ['Confirm income, expenses, and whether the client is behind on home/vehicle payments.', 'Position the call around protecting the asset and creating a sustainable plan.', 'Request signed Form 16, ID, latest payslip and 3 months bank statements, then start the statutory workflow if the client qualifies.'];
+    objectionHandlers = ['I do not want debt review: explain that assets at risk need urgent protection and eligibility must be assessed first.', 'I can catch up next month: compare arrears and instalments against nett income before accepting that answer.', 'I am worried about the process: explain the admin sequence clearly — Form 16, 17.1/COB, assessment, 17.2, proposal and payment setup.'];
   } else if (service === 'Debt Mediation') {
-    nextSteps = ['Confirm all income and debit orders before making a proposal.', 'Use included accounts only and adjust reduced amounts where affordability changes.', 'Send mediation mandate and upload-documents link before contacting creditors.'];
-    objectionHandlers = ['I can pay creditors myself: explain that one coordinated proposal can reduce pressure.', 'I am not in arrears yet: explain mediation can prevent arrears if affordability is already strained.'];
+    nextSteps = ['Confirm all income and debit orders before making a proposal.', 'Use included accounts only and adjust reduced amounts where affordability changes.', 'Send POA/upload-documents link and confirm ID, 3 months bank statements and latest payslip before contacting creditors.'];
+    objectionHandlers = ['I can pay creditors myself: explain that one coordinated proposal can reduce pressure.', 'I am not in arrears yet: explain mediation can prevent arrears if affordability is already strained.', `I need to think about it: bring the client back to the numbers and the potential ${currency(estimatedRelief)} monthly saving.`];
   }
 
   return {
@@ -337,7 +809,11 @@ function evaluateCoach(client: Client, accounts: DebtAccount[]): CoachResult {
     reasons,
     nextSteps,
     objectionHandlers,
-    totals: { outstanding, arrears, originalInstalment, reducedInstalment, estimatedRelief: Math.max(0, originalInstalment - reducedInstalment) },
+    painPoints,
+    budgetBenefits,
+    tonalityTips,
+    talkTrack,
+    totals: { outstanding, arrears, originalInstalment, reducedInstalment, estimatedRelief, householdIncome, livingExpenses, availableAfterLivingExpenses, availableAfterReducedPayment, savingsPercent },
     flags: { debtReviewListed, hasAsset, hasFurniture, scoreZeroRule, doubleSaleCandidate: debtReviewListed && outstanding > 0 }
   };
 }
@@ -366,8 +842,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 }
 
 export default function App() {
-  const defaultApiBase = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:5000' : window.location.origin;
-  const [apiBase, setApiBase] = useState(() => localStorage.getItem('fintastic_sales_api') || defaultApiBase);
+  const [apiBase, setApiBase] = useState(() => localStorage.getItem('fintastic_sales_api') || 'http://localhost:5000');
   const [loggedIn, setLoggedIn] = useState(() => localStorage.getItem('fintastic_logged_in') === '1');
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [tenantId, setTenantId] = useState(() => localStorage.getItem('fintastic_tenant_id') || 'liberty-credit-specialists');
@@ -388,26 +863,56 @@ export default function App() {
   const [activeView, setActiveView] = useState<ViewKey>('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [drrMonths, setDrrMonths] = useState(3);
+  const [drrStartDate, setDrrStartDate] = useState('');
+  const [mediationStartDate, setMediationStartDate] = useState('');
   const [adminClients, setAdminClients] = useState<Client[]>([]);
   const [handoverNotes, setHandoverNotes] = useState('');
   const [docUploadName, setDocUploadName] = useState('ID copy');
-  const [tenantForm, setTenantForm] = useState({ name: '', ncr: '', adminName: '', adminEmail: '' });
-  const [tenantCreateMessage, setTenantCreateMessage] = useState('');
-  const [creatingTenant, setCreatingTenant] = useState(false);
+  const [consultantLeaderboard, setConsultantLeaderboard] = useState<ConsultantMetric[]>([]);
+  const [dashboardSummary, setDashboardSummary] = useState<ConsultantDashboardSummary>({
+    tenantClients: 0,
+    uploadedReports: 0,
+    leadsGenerated: 0,
+    dcValue: 0,
+    reducedInstallments: 0,
+    removalFees: 0,
+    documentsReceived: 0,
+    clientsSubmitted: 0,
+    consultants: 0
+  });
+  const [commissionSnapshot, setCommissionSnapshot] = useState<CommissionSnapshot | null>(null);
+  const [commissionHistory, setCommissionHistory] = useState<CommissionSnapshot[]>([]);
+  const [knowledgeModules, setKnowledgeModules] = useState<KnowledgeModule[]>([]);
+  const [knowledgeQuestions, setKnowledgeQuestions] = useState<KnowledgeQuestion[]>([]);
+  const [assessmentAnswers, setAssessmentAnswers] = useState<Record<string, number>>({});
+  const [assessmentResult, setAssessmentResult] = useState<AssessmentResult | null>(null);
+  const [knowledgeLeaderboard, setKnowledgeLeaderboard] = useState<KnowledgeRank[]>([]);
 
   const accounts = client.accounts || [];
   const coach = useMemo(() => evaluateCoach(client, accounts), [client, accounts]);
   const currentTenant = tenants.find((tenant) => tenant.id === tenantId);
   const currentUser = users.find((user) => user.id === userId);
   const isAdminRole = ['Admin', 'Manager'].includes(currentUser?.role || '');
+  const budget = { ...defaultLivingBudget(), ...(client.budget || {}) };
+  const householdIncome = toNumber(client.nettSalary) + (client.applicationType === 'Joint' ? toNumber(client.spouse?.nettSalary) : 0);
+  const totalLivingExpenses = livingExpenseTotal(budget);
+  const availableAfterLivingExpenses = householdIncome - totalLivingExpenses;
+  const availableAfterReducedPayment = availableAfterLivingExpenses - toNumber(coach.totals.reducedInstalment);
+  const currentMandateBreakdown = useMemo(() => mandateBreakdownFor(client, coach, drrMonths), [client, coach, drrMonths]);
+  const splitDebiChecks = useMemo(() => splitDebiCheckFor(client, coach, drrMonths), [client, coach, drrMonths]);
+  const removalDebiCheck = client.nupayMandates?.removal || defaultNuPay('removal');
+  const mediationDebiCheck = client.nupayMandates?.mediation || defaultNuPay('mediation');
+  const hasDrrFeeCollection = splitDebiChecks.removal.applicable;
+  const hasMediationCollection = splitDebiChecks.mediation.applicable;
 
   const quickTabs: { key: ViewKey; label: string; helper: string }[] = [
     { key: 'profile', label: 'Client Info', helper: 'Details + joint' },
+    { key: 'budget', label: 'Budget', helper: 'Living expenses' },
     { key: 'upload', label: 'Credit Report', helper: 'Upload + parse' },
     { key: 'coach', label: 'Sales Coach', helper: 'Route + script' },
     { key: 'accounts', label: 'Accounts / Fees', helper: 'Reduced amounts' },
     { key: 'documents', label: 'Docs + Signature', helper: 'Links + status' },
-    { key: 'mandate', label: 'NuPay Mandate', helper: 'Send/cancel/resend' },
+    { key: 'mandate', label: 'NuPay DebiCheck', helper: 'Send/cancel DebiCheck' },
     { key: 'workflow', label: 'Admin / PDA', helper: 'Submit handover' }
   ];
 
@@ -423,34 +928,6 @@ export default function App() {
         { id: 'liberty-credit-specialists', name: 'Liberty Credit Specialists', ncr: 'NCRDC-1829', userCount: 3, clientCount: clients.length },
         { id: 'apex-debt-solutions', name: 'Apex Debt Solutions', ncr: 'NCRDC-2491', userCount: 2, clientCount: 0 }
       ]);
-    }
-  };
-
-  const createTenant = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setCreatingTenant(true);
-    setTenantCreateMessage('');
-    try {
-      const response = await fetch(`${apiBase}/api/tenants`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(tenantForm)
-      });
-      const data = await response.json();
-      if (!response.ok || !data.success) throw new Error(data.error || 'Could not create tenant');
-      setTenants(data.tenants || []);
-      setTenantId(data.tenant.id);
-      setUserId(data.user.id);
-      localStorage.setItem('fintastic_tenant_id', data.tenant.id);
-      localStorage.setItem('fintastic_user_id', data.user.id);
-      setTenantForm({ name: '', ncr: '', adminName: '', adminEmail: '' });
-      setTenantCreateMessage(`${data.tenant.name} created successfully.`);
-      await loadUsers(data.tenant.id);
-      await loadClients('', data.tenant.id);
-    } catch (error) {
-      setTenantCreateMessage(error instanceof Error ? error.message : 'Could not create tenant');
-    } finally {
-      setCreatingTenant(false);
     }
   };
 
@@ -489,6 +966,74 @@ export default function App() {
     }
   };
 
+  const loadDashboardMetrics = async (nextTenantId = tenantId) => {
+    try {
+      const response = await fetch(`${apiBase}/api/dashboard/consultants`, { headers: { 'X-Tenant-ID': nextTenantId, 'X-User-ID': userId } });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.error || 'Could not load dashboard metrics');
+      setConsultantLeaderboard(data.leaderboard || []);
+      setDashboardSummary(data.summary || dashboardSummary);
+    } catch (error) {
+      console.warn(error);
+      const fallbackRows = users.filter((u) => u.role === 'Consultant').map((u, index) => {
+        const owned = clients.filter((c) => c.assignedUserId === u.id);
+        const uploaded = owned.length;
+        const reduced = owned.reduce((total, c) => total + toNumber((c.coach || evaluateCoach(c, c.accounts || [])).totals.reducedInstalment), 0);
+        const removal = owned.reduce((total, c) => total + ((c.serviceTypes || [c.serviceType]).includes('Debt Review Removal') ? drrFee : 0), 0);
+        const docs = owned.reduce((total, c) => total + ((c.documents?.items || []).filter((d) => d.status === 'Uploaded').length), 0);
+        return { rank: index + 1, userId: u.id, name: u.name, role: u.role, email: u.email, leadsGenerated: uploaded, uploadedReports: uploaded, activeClients: owned.length, clientsSubmitted: owned.filter((c) => c.status === 'Submitted to Admin').length, reducedInstallments: reduced, removalFees: removal, dcValue: reduced + removal, documentsReceived: docs, requiredDocuments: owned.reduce((total, c) => total + (c.documents?.items || []).length, 0), documentCompletionRate: 0, performanceScore: 0 } as ConsultantMetric;
+      });
+      setConsultantLeaderboard(fallbackRows);
+      setDashboardSummary({ tenantClients: clients.length, uploadedReports: clients.length, leadsGenerated: clients.length, dcValue: fallbackRows.reduce((t, r) => t + r.dcValue, 0), reducedInstallments: fallbackRows.reduce((t, r) => t + r.reducedInstallments, 0), removalFees: fallbackRows.reduce((t, r) => t + r.removalFees, 0), documentsReceived: fallbackRows.reduce((t, r) => t + r.documentsReceived, 0), clientsSubmitted: fallbackRows.reduce((t, r) => t + r.clientsSubmitted, 0), consultants: fallbackRows.length });
+    }
+  };
+
+  const loadCommissionStats = async () => {
+    try {
+      const response = await fetch(`${apiBase}/api/manager/commission-stats`, { headers: { 'X-Tenant-ID': tenantId, 'X-User-ID': userId } });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.error || 'Only manager logins can store/review commission snapshots.');
+      setCommissionSnapshot(data.snapshot || null);
+      setCommissionHistory(data.history || []);
+      if (data.snapshot?.leaderboard) setConsultantLeaderboard(data.snapshot.leaderboard);
+      if (data.snapshot?.summary) setDashboardSummary(data.snapshot.summary);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Could not load commission stats');
+    }
+  };
+
+  const loadProductKnowledge = async () => {
+    try {
+      const response = await fetch(`${apiBase}/api/learning/product-knowledge`, { headers: { 'X-Tenant-ID': tenantId, 'X-User-ID': userId } });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.error || 'Could not load product knowledge');
+      setKnowledgeModules(data.modules || []);
+      setKnowledgeQuestions(data.questions || []);
+      setKnowledgeLeaderboard(data.leaderboard || []);
+      setAssessmentResult(data.latestUserResult || null);
+    } catch (error) {
+      console.warn(error);
+    }
+  };
+
+  const submitKnowledgeAssessment = async () => {
+    try {
+      const response = await fetch(`${apiBase}/api/learning/assessment/submit`, {
+        method: 'POST',
+        headers: apiHeaders,
+        body: JSON.stringify({ answers: assessmentAnswers })
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.error || 'Could not submit assessment');
+      setAssessmentResult(data.result);
+      setKnowledgeLeaderboard(data.leaderboard || []);
+      alert(`Assessment saved: ${data.result.scorePercent}% - ${data.result.level}`);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Could not submit assessment');
+    }
+  };
+
+
   useEffect(() => {
     loadTenants();
   }, []);
@@ -503,6 +1048,12 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('fintastic_user_id', userId);
   }, [userId]);
+
+  useEffect(() => {
+    setDrrMonths(client.nupayMandates?.removal?.drrMonths || client.nupayMandate?.drrMonths || 3);
+    setDrrStartDate(client.nupayMandates?.removal?.startDate || '');
+    setMediationStartDate(client.nupayMandates?.mediation?.startDate || '');
+  }, [client.id]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => loadClients(searchText), 250);
@@ -532,6 +1083,10 @@ export default function App() {
 
   const updateSpouse = <K extends keyof Applicant>(field: K, value: Applicant[K]) => {
     setClient((current) => ({ ...current, spouse: { ...current.spouse, [field]: value } }));
+  };
+
+  const updateBudget = <K extends keyof LivingBudget>(field: K, value: LivingBudget[K]) => {
+    setClient((current) => ({ ...current, budget: { ...defaultLivingBudget(), ...(current.budget || {}), [field]: value } }));
   };
 
   const updateBank = <K extends keyof BankDetails>(field: K, value: BankDetails[K]) => {
@@ -689,7 +1244,7 @@ export default function App() {
       const response = await fetch(`${apiBase}/api/portal/links`, {
         method: 'POST',
         headers: apiHeaders,
-        body: JSON.stringify({ clientId: saved.id, tenantId, baseUrl: `${window.location.origin}/portal` })
+        body: JSON.stringify({ clientId: saved.id, tenantId, baseUrl: `${apiBase}/portal` })
       });
       const data = await response.json();
       if (!response.ok || !data.success) throw new Error(data.error || 'Could not create links');
@@ -720,7 +1275,7 @@ export default function App() {
     const response = await fetch(`${apiBase}/api/clients/${saved.id}${path}`, {
       method,
       headers: apiHeaders,
-      body: JSON.stringify({ ...body, tenantId, baseUrl: `${window.location.origin}/portal` })
+      body: JSON.stringify({ ...body, tenantId, baseUrl: `${apiBase}/portal` })
     });
     const data = await response.json();
     if (!response.ok || !data.success) throw new Error(data.error || 'Action failed');
@@ -769,29 +1324,47 @@ export default function App() {
     }
   };
 
-  const sendNupayMandate = async () => {
+  const sendSplitDebiCheck = async (mandateType: NuPayMandateKind) => {
     try {
-      const amount = client.nupayMandate?.amount || coach.totals.reducedInstalment || (coach.service === 'Debt Review Removal' ? drrFee / drrMonths : 0);
-      await postClientAction('/mandate/send', { amount, debitDay: client.bank.debitDay });
+      const split = splitDebiCheckFor(client, coach, drrMonths);
+      const part = split[mandateType];
+      if (!part.applicable || part.amount <= 0) {
+        alert(mandateType === 'removal' ? 'Debt Review Removal fee DebiCheck is not applicable for this client.' : 'Debt Mediation DebiCheck is not applicable for this client.');
+        return;
+      }
+      await postClientAction(`/mandates/${mandateType}/send`, {
+        amount: part.amount,
+        debitDay: client.bank.debitDay,
+        startDate: mandateType === 'removal' ? drrStartDate : mediationStartDate,
+        drrMonths: mandateType === 'removal' ? drrMonths : undefined,
+        includesDrrFee: mandateType === 'removal',
+        components: { ...part.components, startDate: mandateType === 'removal' ? drrStartDate : mediationStartDate, mandateKind: mandateType }
+      });
     } catch (error) {
-      alert(error instanceof Error ? error.message : 'Could not send NuPay mandate');
+      alert(error instanceof Error ? error.message : 'Could not send NuPay DebiCheck');
     }
+  };
+
+  const cancelSplitDebiCheck = async (mandateType: NuPayMandateKind) => {
+    try {
+      await postClientAction(`/mandates/${mandateType}/cancel`);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Could not cancel NuPay DebiCheck');
+    }
+  };
+
+  const sendNupayMandate = async () => {
+    if (hasDrrFeeCollection) await sendSplitDebiCheck('removal');
+    if (hasMediationCollection) await sendSplitDebiCheck('mediation');
   };
 
   const cancelNupayMandate = async () => {
-    try {
-      await postClientAction('/mandate/cancel');
-    } catch (error) {
-      alert(error instanceof Error ? error.message : 'Could not cancel NuPay mandate');
-    }
+    if (hasDrrFeeCollection) await cancelSplitDebiCheck('removal');
+    if (hasMediationCollection) await cancelSplitDebiCheck('mediation');
   };
 
   const resendNupayMandate = async () => {
-    try {
-      await postClientAction('/mandate/resend', { reason: 'Cancelled or details changed' });
-    } catch (error) {
-      alert(error instanceof Error ? error.message : 'Could not resend NuPay mandate');
-    }
+    await sendNupayMandate();
   };
 
   const updatePdaField = <K extends keyof PdaInfo>(field: K, value: PdaInfo[K]) => {
@@ -803,6 +1376,38 @@ export default function App() {
       await postClientAction('/pda', { ...(client.pdaInfo || defaultPda()) }, 'PUT');
     } catch (error) {
       alert(error instanceof Error ? error.message : 'Could not save PDA info');
+    }
+  };
+
+  const updateAdminWorkflowStatus = async (overallStatus: string, activeService?: ServiceType) => {
+    try {
+      await postClientAction('/admin-workflow/status', { overallStatus, activeService: activeService || client.adminWorkflow?.activeService }, 'PATCH');
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Could not update admin workflow');
+    }
+  };
+
+  const updateAdminTask = async (task: AdminTask, status: string, notes = task.notes || '') => {
+    try {
+      await postClientAction('/admin-workflow/task', { taskId: task.id, status, notes }, 'PATCH');
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Could not update admin task');
+    }
+  };
+
+  const updateCreditorAction = async (action: AdminCreditorAction, field: 'status' | 'response' | 'notes' | 'proposedAmount', value: string | number) => {
+    try {
+      await postClientAction('/admin-workflow/creditor', { actionId: action.id, [field]: value }, 'PATCH');
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Could not update creditor action');
+    }
+  };
+
+  const updateFeeItem = async (fee: AdminFeeItem, field: 'status' | 'amount' | 'dueDate' | 'notes', value: string | number) => {
+    try {
+      await postClientAction('/admin-workflow/fees', { feeId: fee.id, [field]: value }, 'PATCH');
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Could not update fee item');
     }
   };
 
@@ -839,13 +1444,7 @@ export default function App() {
     loadClients();
   };
 
-  const documents = useMemo(() => {
-    const common = ['POPIA consent', 'ID copy', 'Proof of address', 'Latest payslip', '3 months bank statements', 'Credit report'];
-    if (coach.service === 'Debt Review Removal') return [...common, 'DR removal mandate', 'NCT/court order if available', 'Paid-up letters where applicable', 'Clearance or termination evidence'];
-    if (coach.service === 'Debt Review Sales Coach') return [...common, 'Form 16', '17.1 notice', 'COB request letters', 'Debit order mandate', 'Budget and affordability sheet'];
-    if (coach.service === 'Debt Mediation') return [...common, 'Mediation mandate', 'Creditor proposal sheet', 'Debit order mandate', 'Settlement/arrangement letters'];
-    return common;
-  }, [coach.service]);
+  const documents = useMemo(() => requiredDocumentsFor(coach.service), [coach.service]);
 
   const handoverText = useMemo(() => {
     return [
@@ -858,9 +1457,13 @@ export default function App() {
       `Outstanding: ${currency(coach.totals.outstanding)}`,
       `Original Instalments: ${currency(coach.totals.originalInstalment)}`,
       `Reduced Proposal: ${currency(coach.totals.reducedInstalment)}`,
+      `Household Nett Income: ${currency(householdIncome)}`,
+      `Living Expenses Budget: ${currency(totalLivingExpenses)}`,
+      `Available after living expenses: ${currency(availableAfterLivingExpenses)}`,
       `DRR Fee: ${coach.service === 'Debt Review Removal' ? `${currency(drrFee)} over ${drrMonths} month(s) = ${currency(drrFee / drrMonths)} p/m` : 'Not applicable'}`,
       `Signature: ${client.signature?.status || 'Not Sent'}`,
-      `NuPay Mandate: ${client.nupayMandate?.status || 'Not Sent'} ${client.nupayMandate?.mandateId ? `(${client.nupayMandate.mandateId})` : ''}`,
+      `NuPay DebiCheck Removal: ${client.nupayMandates?.removal?.status || 'Not Sent'} ${client.nupayMandates?.removal?.mandateId ? `(${client.nupayMandates.removal.mandateId})` : ''}`,
+      `NuPay DebiCheck Mediation: ${client.nupayMandates?.mediation?.status || 'Not Sent'} ${client.nupayMandates?.mediation?.mandateId ? `(${client.nupayMandates.mediation.mandateId})` : ''}`,
       `PDA: ${client.pdaInfo?.status || 'Not Submitted'} ${client.pdaInfo?.pdaReference ? `- ${client.pdaInfo.pdaReference}` : ''}`,
       `Uploaded Docs: ${(client.documents?.items || []).filter((item) => item.status === 'Uploaded').length}/${(client.documents?.items || []).length}`,
       '',
@@ -874,19 +1477,23 @@ export default function App() {
 
   useEffect(() => {
     if (activeView === 'admin') loadAdminClients();
-  }, [activeView, tenantId]);
+    if (activeView === 'dashboard') loadDashboardMetrics();
+    if (activeView === 'knowledge') loadProductKnowledge();
+  }, [activeView, tenantId, clients.length]);
 
   const allNavItems: { key: ViewKey; label: string; helper: string }[] = [
-    { key: 'dashboard', label: 'Dashboard', helper: 'Tenant overview' },
+    { key: 'dashboard', label: 'Dashboard', helper: 'Growth league' },
     { key: 'clients', label: 'Clients', helper: 'List and search' },
     { key: 'upload', label: 'Upload Report', helper: 'Parse and route sale' },
     { key: 'profile', label: 'Client Profile', helper: 'Single or joint application' },
+    { key: 'budget', label: 'Living Budget', helper: 'Expenses and affordability' },
     { key: 'coach', label: 'Sales Coach', helper: 'Best next sale' },
     { key: 'accounts', label: 'Accounts', helper: 'Reduced amount table' },
     { key: 'mandate', label: 'Banking / NuPay', helper: 'Debit order ready' },
     { key: 'documents', label: 'Documents', helper: 'Links and uploaded docs' },
     { key: 'workflow', label: 'Submit Workflow', helper: 'Admin and PDA handover' },
     { key: 'admin', label: 'Admin Queue', helper: 'Docs, fees, PDA' },
+    { key: 'knowledge', label: 'Product Knowledge', helper: 'Training + assessment' },
     { key: 'settings', label: 'Settings', helper: 'API and session' }
   ];
   const navItems = allNavItems.filter((item) => isAdminRole || item.key !== 'admin');
@@ -937,7 +1544,8 @@ export default function App() {
         <div className="tenant-card dark">
           <small>Active tenant</small>
           <strong>{currentTenant?.name || tenantId}</strong>
-          <span>{clients.length} visible client(s)</span>
+          <span>{currentTenant?.ncr || ''}</span>
+          <span>{currentUser ? `${currentUser.name} · ${currentUser.role}` : "Competition workspace"}</span>
         </div>
         <nav className="nav-list">
           {navItems.map((item) => (
@@ -958,7 +1566,7 @@ export default function App() {
           <button className="menu-button" onClick={() => setSidebarOpen((open) => !open)}>☰</button>
           <div>
             <h1>{navItems.find((item) => item.key === activeView)?.label}</h1>
-            <p>Every user sees only the clients inside their own tenant database.</p>
+            <p>{activeView === 'dashboard' ? 'Healthy competition dashboard: performance only, no client details.' : 'Every user sees only the clients inside their own tenant database.'}</p>
           </div>
           <div className="topbar-actions session-chip">
             <span><strong>{currentTenant?.name || tenantId}</strong></span>
@@ -967,71 +1575,160 @@ export default function App() {
           </div>
         </header>
 
-        <div className="case-tab-strip" aria-label="Client workflow tabs">
-          <div className="case-tab-client">
-            <span>Selected client</span>
-            <strong>{client.fullName || 'No client selected'}</strong>
-            <small>{client.id.startsWith('local-') ? 'Unsaved' : client.status}</small>
+        {activeView !== 'dashboard' && (
+          <div className="case-tab-strip" aria-label="Client workflow tabs">
+            <div className="case-tab-client">
+              <span>Selected client</span>
+              <strong>{client.fullName || 'No client selected'}</strong>
+              <small>{client.id.startsWith('local-') ? 'Unsaved' : client.status}</small>
+            </div>
+            <div className="case-tabs">
+              {quickTabs.map((tab, index) => (
+                <button key={tab.key} className={activeView === tab.key ? 'active' : ''} onClick={() => setActiveView(tab.key)}>
+                  <b>{String.fromCharCode(65 + index)}</b>
+                  <span>{tab.label}</span>
+                  <small>{tab.helper}</small>
+                </button>
+              ))}
+            </div>
+            <div className="save-status">
+              <button className="primary" onClick={saveClient} disabled={saving}>{saving ? 'Saving...' : 'Save Client'}</button>
+              <small>{saveMessage}</small>
+            </div>
           </div>
-          <div className="case-tabs">
-            {quickTabs.map((tab, index) => (
-              <button key={tab.key} className={activeView === tab.key ? 'active' : ''} onClick={() => setActiveView(tab.key)}>
-                <b>{String.fromCharCode(65 + index)}</b>
-                <span>{tab.label}</span>
-                <small>{tab.helper}</small>
-              </button>
-            ))}
-          </div>
-          <div className="save-status">
-            <button className="primary" onClick={saveClient} disabled={saving}>{saving ? 'Saving...' : 'Save Client'}</button>
-            <small>{saveMessage}</small>
-          </div>
-        </div>
+        )}
 
         {activeView === 'dashboard' && (
-          <section className="view-stack">
-            <div className="hero-card">
+          <section className="view-stack dashboard-clean competition-dashboard">
+            <div className="dashboard-clean-hero competition-hero">
               <div>
-                <Badge tone="blue">Tenant Isolated</Badge>
-                <h2>{coach.headline}</h2>
-                <p>{currentTenant?.name || tenantId} users share this tenant’s clients, but no other tenant can see this list or database records.</p>
-                <div className="button-row">
-                  <button className="primary" onClick={() => setActiveView('clients')}>Open Client List</button>
-                  <button className="secondary" onClick={() => setActiveView('upload')}>Upload Credit Report</button>
-                </div>
+                <Badge tone="blue">{currentUser?.role === 'Manager' ? 'Manager competition dashboard' : 'Consultant competition dashboard'}</Badge>
+                <h2>🔥 Khusela Growth League</h2>
+                <p>
+                  A high-energy scoreboard for motivation, healthy competition and daily focus. No client names, IDs, phone numbers or case details appear here — only consultant rankings and commission-ready totals for this tenant.
+                </p>
+                <div className="vibe-chip-row"><span>⚡ Beat yesterday</span><span>🏆 Top 3 podium</span><span>📈 Grow DC value</span><span>✅ Docs win deals</span></div>
               </div>
-              <div className="hero-summary">
-                <span>Selected client</span>
-                <strong>{client.fullName || 'No client selected'}</strong>
-                <small>{coach.service}</small>
+              <div className="dashboard-action-panel">
+                <button className="primary" onClick={() => setActiveView('upload')}>Upload New Lead</button>
+                <button className="secondary" onClick={() => loadDashboardMetrics()}>Refresh League</button>
+                {currentUser?.role === 'Manager' ? <button className="secondary" onClick={loadCommissionStats}>Store Commission Snapshot</button> : null}
               </div>
             </div>
 
-            <div className="stats-grid">
-              <StatCard label="Tenant Clients" value={String(clients.length)} sub="Scoped by X-Tenant-ID" />
-              <StatCard label="Outstanding Debt" value={currency(coach.totals.outstanding)} sub="Selected client" />
-              <StatCard label="Reduced Proposal" value={currency(coach.totals.reducedInstalment)} sub="Included accounts" />
-              <StatCard label="Estimated Relief" value={currency(coach.totals.estimatedRelief)} sub="Before final checks" />
+            <div className="stats-grid dashboard-kpis competition-kpis">
+              <StatCard label="Leads Generated" value={String(dashboardSummary.leadsGenerated || 0)} sub="Uploaded credit reports" />
+              <StatCard label="DC Value" value={currency(dashboardSummary.dcValue || 0)} sub="Reduced payments + DRR fees" />
+              <StatCard label="Documents Received" value={String(dashboardSummary.documentsReceived || 0)} sub="Required docs uploaded" />
+              <StatCard label="Admin Handovers" value={String(dashboardSummary.clientsSubmitted || 0)} sub="Submitted to workflow" />
             </div>
 
-            <div className="two-column">
-              <div className="panel-card">
-                <h3>Tenant security rule</h3>
-                <p>Frontend sends <code>X-Tenant-ID</code> and backend stores clients under that tenant only. Switching tenants changes the entire client list.</p>
-                <div className="flag-grid">
-                  <Badge tone="good">Tenant DB</Badge>
-                  <Badge tone="good">Shared users</Badge>
-                  <Badge tone="danger">No cross-tenant clients</Badge>
+            <div className="leader-podium competition-podium hype-podium">
+              {consultantLeaderboard.slice(0, 3).map((row) => (
+                <div key={row.userId} className={`podium-card rank-${row.rank}`}>
+                  <span>{row.rank === 1 ? '👑' : `#${row.rank}`}</span>
+                  <strong>{row.name}</strong>
+                  <small>{row.leadsGenerated} lead(s) · {currency(row.dcValue)} DC value · {row.documentsReceived} docs</small>
+                  <em>{row.rank === 1 ? 'League leader' : row.rank === 2 ? 'Chasing hard' : 'Podium spot'}</em>
                 </div>
-              </div>
-              <div className="panel-card">
-                <h3>Selected client flags</h3>
-                <div className="flag-grid">
-                  <Badge tone={coach.flags.debtReviewListed ? 'danger' : 'good'}>{coach.flags.debtReviewListed ? 'Debt Review Listed' : 'No DR Listing'}</Badge>
-                  <Badge tone={coach.flags.hasAsset ? 'warn' : 'neutral'}>{coach.flags.hasAsset ? 'Asset Detected' : 'No Asset Detected'}</Badge>
-                  <Badge tone={coach.flags.hasFurniture ? 'blue' : 'neutral'}>{coach.flags.hasFurniture ? 'Furniture Tagged' : 'No Furniture Tag'}</Badge>
+              ))}
+              {!consultantLeaderboard.length ? <div className="empty-state">No activity yet. Upload reports to start the league.</div> : null}
+            </div>
+
+            <div className="motivation-strip">
+              <div><strong>Daily mission</strong><span>Upload clean leads, get docs back fast, submit complete files.</span></div>
+              <div><strong>Winning habit</strong><span>Use the Sales Coach talk track before every follow-up.</span></div>
+              <div><strong>Momentum rule</strong><span>One more qualified lead or one more document can move the ranking.</span></div>
+            </div>
+
+            <div className="panel-card leaderboard-card clean-leaderboard-card competition-board">
+              <div className="section-heading compact-heading">
+                <div>
+                  <h2>Leaderboard</h2>
+                  <p>Ranked for growth, consistency and commission review. This table shows consultant performance only, never client details.</p>
                 </div>
+                <Badge tone="good">{dashboardSummary.consultants || consultantLeaderboard.length} consultant(s)</Badge>
               </div>
+              <div className="leaderboard-table-wrap">
+                <table className="leaderboard-table clean-leaderboard">
+                  <thead>
+                    <tr>
+                      <th>Rank</th>
+                      <th>Consultant</th>
+                      <th>Leads</th>
+                      <th>Reduced Payments</th>
+                      <th>DRR Fees</th>
+                      <th>DC Value</th>
+                      <th>Docs Received</th>
+                      <th>Handovers</th>
+                      <th>Score</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {consultantLeaderboard.map((row) => (
+                      <tr key={row.userId}>
+                        <td><span className="rank-pill">#{row.rank}</span></td>
+                        <td><strong>{row.name}</strong><small>{row.role}</small></td>
+                        <td>{row.leadsGenerated}</td>
+                        <td>{currency(row.reducedInstallments)}</td>
+                        <td>{currency(row.removalFees)}</td>
+                        <td><strong>{currency(row.dcValue)}</strong></td>
+                        <td>{row.documentsReceived}{row.requiredDocuments ? <small> / {row.requiredDocuments}</small> : null}</td>
+                        <td>{row.clientsSubmitted}</td>
+                        <td><strong>{row.performanceScore}</strong></td>
+                      </tr>
+                    ))}
+                    {!consultantLeaderboard.length ? <tr><td colSpan={9}>No consultant activity yet. Upload reports to start ranking consultants.</td></tr> : null}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="competition-info-grid">
+              <div className="panel-card compact-panel">
+                <h3>How consultants move up</h3>
+                <ul className="clean-list">
+                  <li>Upload qualified credit reports as new leads.</li>
+                  <li>Build strong DC value through reduced instalments and applicable DRR fees.</li>
+                  <li>Get required documents back from clients quickly.</li>
+                  <li>Submit complete, clean files to admin.</li>
+                </ul>
+              </div>
+
+              <div className="panel-card compact-panel">
+                <h3>What managers review</h3>
+                <ul className="clean-list">
+                  <li>Lead volume and conversion readiness.</li>
+                  <li>Total DC value for commission calculations.</li>
+                  <li>Document collection discipline.</li>
+                  <li>Admin handover completion rate.</li>
+                </ul>
+              </div>
+
+              {currentUser?.role === 'Manager' && commissionSnapshot ? (
+                <div className="panel-card compact-panel manager-snapshot">
+                  <h3>Latest commission snapshot</h3>
+                  <div className="info-list compact-info">
+                    <div><span>Period</span><strong>{commissionSnapshot.period}</strong></div>
+                    <div><span>Saved</span><strong>{commissionSnapshot.createdAt ? new Date(commissionSnapshot.createdAt).toLocaleString() : ''}</strong></div>
+                    <div><span>DC value</span><strong>{currency(commissionSnapshot.summary?.dcValue || 0)}</strong></div>
+                  </div>
+                </div>
+              ) : (
+                <div className="panel-card compact-panel">
+                  <h3>Product knowledge</h3>
+                  <p className="muted-copy">Consultants can improve their ranking by staying sharp on Debt Review, Removal, Mediation and DebiCheck.</p>
+                  <button className="secondary" onClick={() => setActiveView('knowledge')}>Open Product Knowledge</button>
+                </div>
+              )}
+            </div>
+
+            <div className="panel-card dashboard-rules-strip">
+              <strong>Ranking formula:</strong>
+              <span>Leads = uploaded reports.</span>
+              <span>DC value = reduced instalments + applicable DRR fees.</span>
+              <span>Docs = required documents received.</span>
+              <span>Handovers = submitted to admin.</span>
             </div>
           </section>
         )}
@@ -1183,6 +1880,42 @@ export default function App() {
           </section>
         )}
 
+        {activeView === 'budget' && (
+          <section className="view-stack">
+            <div className="panel-card">
+              <div className="section-heading">
+                <div>
+                  <h2>Living expenses budget</h2>
+                  <p>Capture the client’s monthly household living expenses before confirming affordability and reduced payments.</p>
+                </div>
+                <button className="primary" onClick={saveClient} disabled={saving}>{saving ? 'Saving...' : 'Save Budget'}</button>
+              </div>
+              <div className="stat-grid compact">
+                <StatCard label="Household nett income" value={currency(householdIncome)} sub={client.applicationType === 'Joint' ? 'Client + spouse nett salary' : 'Client nett salary'} />
+                <StatCard label="Living expenses" value={currency(totalLivingExpenses)} sub="Total captured monthly expenses" />
+                <StatCard label="After living expenses" value={currency(availableAfterLivingExpenses)} sub="Before reduced debt proposal" />
+                <StatCard label="After reduced payment" value={currency(availableAfterReducedPayment)} sub="After proposed reduced amount" />
+              </div>
+              <div className="form-grid">
+                <Field label="Rent / Bond"><input value={budget.rentOrBond} onChange={(event) => updateBudget('rentOrBond', toNumber(event.target.value))} /></Field>
+                <Field label="Groceries"><input value={budget.groceries} onChange={(event) => updateBudget('groceries', toNumber(event.target.value))} /></Field>
+                <Field label="Electricity / Water"><input value={budget.electricityWater} onChange={(event) => updateBudget('electricityWater', toNumber(event.target.value))} /></Field>
+                <Field label="Transport"><input value={budget.transport} onChange={(event) => updateBudget('transport', toNumber(event.target.value))} /></Field>
+                <Field label="School Fees"><input value={budget.schoolFees} onChange={(event) => updateBudget('schoolFees', toNumber(event.target.value))} /></Field>
+                <Field label="Insurance"><input value={budget.insurance} onChange={(event) => updateBudget('insurance', toNumber(event.target.value))} /></Field>
+                <Field label="Medical"><input value={budget.medical} onChange={(event) => updateBudget('medical', toNumber(event.target.value))} /></Field>
+                <Field label="Cellphone / Internet"><input value={budget.cellphoneInternet} onChange={(event) => updateBudget('cellphoneInternet', toNumber(event.target.value))} /></Field>
+                <Field label="Clothing"><input value={budget.clothing} onChange={(event) => updateBudget('clothing', toNumber(event.target.value))} /></Field>
+                <Field label="Maintenance"><input value={budget.maintenance} onChange={(event) => updateBudget('maintenance', toNumber(event.target.value))} /></Field>
+                <Field label="Other Living Expenses"><input value={budget.otherLivingExpenses} onChange={(event) => updateBudget('otherLivingExpenses', toNumber(event.target.value))} /></Field>
+                <Field label="Dependants"><input value={budget.dependants} onChange={(event) => updateBudget('dependants', toNumber(event.target.value))} /></Field>
+              </div>
+              <label className="field full-width"><span>Budget Notes</span><textarea value={budget.notes} onChange={(event) => updateBudget('notes', event.target.value)} placeholder="Capture rent proof notes, dependants, shared expenses or affordability concerns." /></label>
+              {availableAfterReducedPayment < 0 ? <div className="alert danger">Warning: proposed reduced payment is higher than the available amount after living expenses. Adjust the reduced amount or review the budget.</div> : <div className="alert good">Budget leaves {currency(availableAfterReducedPayment)} after the proposed reduced payment.</div>}
+            </div>
+          </section>
+        )}
+
         {activeView === 'coach' && (
           <section className="view-stack">
             <div className="coach-card">
@@ -1208,9 +1941,15 @@ export default function App() {
             </div>
             <div className="three-column">
               <div className="panel-card"><h3>Why this route</h3><ul className="clean-list">{coach.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul></div>
-              <div className="panel-card"><h3>Next steps</h3><ol className="clean-list numbered">{coach.nextSteps.map((step) => <li key={step}>{step}</li>)}</ol></div>
-              <div className="panel-card"><h3>Objection help</h3><ul className="clean-list">{coach.objectionHandlers.length ? coach.objectionHandlers.map((item) => <li key={item}>{item}</li>) : <li>Capture more data to generate objection handling.</li>}</ul></div>
+              <div className="panel-card"><h3>Budget pain points</h3><ul className="clean-list">{coach.painPoints.length ? coach.painPoints.map((item) => <li key={item}>{item}</li>) : <li>Capture income and living expenses to expose the pressure points.</li>}</ul></div>
+              <div className="panel-card"><h3>Savings benefit</h3><ul className="clean-list">{coach.budgetBenefits.length ? coach.budgetBenefits.map((item) => <li key={item}>{item}</li>) : <li>Reduced-payment benefit appears after accounts and budget are captured.</li>}</ul></div>
             </div>
+            <div className="three-column">
+              <div className="panel-card"><h3>Conversation script</h3><ul className="clean-list">{coach.talkTrack.length ? coach.talkTrack.map((item) => <li key={item}>{item}</li>) : <li>Capture budget figures to generate a personalised script.</li>}</ul></div>
+              <div className="panel-card"><h3>Objection help</h3><ul className="clean-list">{coach.objectionHandlers.length ? coach.objectionHandlers.map((item) => <li key={item}>{item}</li>) : <li>Capture more data to generate objection handling.</li>}</ul></div>
+              <div className="panel-card"><h3>Tonality advice</h3><ul className="clean-list">{coach.tonalityTips.map((item) => <li key={item}>{item}</li>)}</ul></div>
+            </div>
+            <div className="panel-card"><h3>Next steps</h3><ol className="clean-list numbered">{coach.nextSteps.map((step) => <li key={step}>{step}</li>)}</ol></div>
           </section>
         )}
 
@@ -1266,18 +2005,51 @@ export default function App() {
               </div>
             </div>
             <div className="panel-card">
-              <div className="section-heading"><div><h2>NuPay mandate control</h2><p>Send, view status, cancel and resend a mandate when bank details or amount changes.</p></div><Badge tone={client.nupayMandate?.status === 'Pending Acceptance' ? 'warn' : client.nupayMandate?.status === 'Cancelled' ? 'danger' : client.nupayMandate?.status === 'Not Sent' ? 'neutral' : 'good'}>{client.nupayMandate?.status || 'Not Sent'}</Badge></div>
-              <div className="form-grid">
-                <Field label="Mandate Amount"><input value={client.nupayMandate?.amount || coach.totals.reducedInstalment || (coach.service === 'Debt Review Removal' ? drrFee / drrMonths : 0)} onChange={(event) => setClient((current) => ({ ...current, nupayMandate: { ...defaultNuPay(), ...(current.nupayMandate || {}), amount: toNumber(event.target.value), history: current.nupayMandate?.history || [] } }))} /></Field>
-                <Field label="Debit Day"><input value={client.bank.debitDay} onChange={(event) => updateBank('debitDay', event.target.value)} /></Field>
-                <Field label="Mandate ID"><input value={client.nupayMandate?.mandateId || ''} readOnly /></Field>
-                <Field label="Mandate Link"><input value={client.nupayMandate?.link || ''} readOnly /></Field>
+              <div className="section-heading"><div><h2>NuPay DebiCheck control</h2><p>Send separate DebiChecks where applicable: one for the DRR removal fee and one for Debt Mediation reduced payments. Each can have its own start date.</p></div><Badge tone="blue">Separate mandates</Badge></div>
+              <div className="split-mandate-grid">
+                <div className={`split-mandate-card ${hasDrrFeeCollection ? '' : 'disabled-card'}`}>
+                  <div className="split-mandate-title"><div><span className="mandate-icon">🏁</span><h3>Removal DebiCheck</h3><small>R7,000 Debt Review Removal fee only</small></div><Badge tone={removalDebiCheck.status === 'Pending Acceptance' ? 'warn' : removalDebiCheck.status === 'Cancelled' ? 'danger' : removalDebiCheck.status === 'Accepted' ? 'good' : 'neutral'}>{removalDebiCheck.status || 'Not Sent'}</Badge></div>
+                  <div className="form-grid">
+                    <Field label="Applicable"><input value={hasDrrFeeCollection ? 'Yes - DRR fee applies' : 'No - client is not routed to DRR'} readOnly /></Field>
+                    <Field label="DRR fee split"><select value={drrMonths} onChange={(event) => setDrrMonths(Number(event.target.value))} disabled={!hasDrrFeeCollection}><option value={1}>1 month</option><option value={2}>2 months</option><option value={3}>3 months</option></select></Field>
+                    <Field label="Debit order start date"><input type="date" value={drrStartDate} onChange={(event) => setDrrStartDate(event.target.value)} disabled={!hasDrrFeeCollection} /></Field>
+                    <Field label="Debit day"><input value={client.bank.debitDay} onChange={(event) => updateBank('debitDay', event.target.value)} disabled={!hasDrrFeeCollection} /></Field>
+                    <Field label="Monthly DRR fee debit"><input value={currency(splitDebiChecks.removal.amount)} readOnly /></Field>
+                    <Field label="Mandate ID"><input value={removalDebiCheck.mandateId || ''} readOnly /></Field>
+                  </div>
+                  <div className="calculation-card compact-calc">
+                    <span>Removal fee total: <strong>{currency(drrFee)}</strong></span>
+                    <span>Collection period: <strong>{hasDrrFeeCollection ? `${drrMonths} month(s)` : 'Not applicable'}</strong></span>
+                    <span>Start date: <strong>{drrStartDate || removalDebiCheck.startDate || 'Choose before sending if needed'}</strong></span>
+                    {removalDebiCheck.link ? <span>Client link: <a href={removalDebiCheck.link} target="_blank" rel="noreferrer">Open Removal DebiCheck</a></span> : null}
+                  </div>
+                  <div className="button-row"><button className="primary" onClick={() => sendSplitDebiCheck('removal')} disabled={!hasDrrFeeCollection}>Send Removal DebiCheck</button><button className="secondary" onClick={() => cancelSplitDebiCheck('removal')} disabled={!hasDrrFeeCollection}>Cancel Removal</button></div>
+                </div>
+
+                <div className={`split-mandate-card ${hasMediationCollection ? '' : 'disabled-card'}`}>
+                  <div className="split-mandate-title"><div><span className="mandate-icon">🤝</span><h3>Mediation DebiCheck</h3><small>Ongoing reduced payment only</small></div><Badge tone={mediationDebiCheck.status === 'Pending Acceptance' ? 'warn' : mediationDebiCheck.status === 'Cancelled' ? 'danger' : mediationDebiCheck.status === 'Accepted' ? 'good' : 'neutral'}>{mediationDebiCheck.status || 'Not Sent'}</Badge></div>
+                  <div className="form-grid">
+                    <Field label="Applicable"><input value={hasMediationCollection ? 'Yes - mediation/reduced payment applies' : 'No - no mediation payment for this client'} readOnly /></Field>
+                    <Field label="Mediation frequency"><input value="Ongoing monthly DebiCheck" readOnly /></Field>
+                    <Field label="Debit order start date"><input type="date" value={mediationStartDate} onChange={(event) => setMediationStartDate(event.target.value)} disabled={!hasMediationCollection} /></Field>
+                    <Field label="Debit day"><input value={client.bank.debitDay} onChange={(event) => updateBank('debitDay', event.target.value)} disabled={!hasMediationCollection} /></Field>
+                    <Field label="Monthly mediation debit"><input value={currency(splitDebiChecks.mediation.amount)} readOnly /></Field>
+                    <Field label="Mandate ID"><input value={mediationDebiCheck.mandateId || ''} readOnly /></Field>
+                  </div>
+                  <div className="calculation-card compact-calc">
+                    <span>Reduced creditor/payment proposal: <strong>{currency(splitDebiChecks.mediation.amount)} p/m</strong></span>
+                    <span>Collection period: <strong>{hasMediationCollection ? 'Ongoing monthly' : 'Not applicable'}</strong></span>
+                    <span>Start date: <strong>{mediationStartDate || mediationDebiCheck.startDate || 'Choose before sending if needed'}</strong></span>
+                    {mediationDebiCheck.link ? <span>Client link: <a href={mediationDebiCheck.link} target="_blank" rel="noreferrer">Open Mediation DebiCheck</a></span> : null}
+                  </div>
+                  <div className="button-row"><button className="primary" onClick={() => sendSplitDebiCheck('mediation')} disabled={!hasMediationCollection}>Send Mediation DebiCheck</button><button className="secondary" onClick={() => cancelSplitDebiCheck('mediation')} disabled={!hasMediationCollection}>Cancel Mediation</button></div>
+                </div>
               </div>
-              <div className="button-row"><button className="primary" onClick={sendNupayMandate}>Send NuPay Mandate</button><button className="secondary" onClick={cancelNupayMandate}>Cancel Mandate</button><button className="secondary" onClick={resendNupayMandate}>Send New Mandate</button></div>
-              {client.nupayMandate?.history?.length ? <ul className="clean-list mandate-history">{client.nupayMandate.history.slice(-4).map((event, index) => <li key={`${event.at}-${index}`}>{event.at ? new Date(event.at).toLocaleString() : ''} · {event.action}{event.amount ? ` · ${currency(event.amount)}` : ''}</li>)}</ul> : <p className="muted">No mandate history yet.</p>}
+              <div className="panel-note debicheck-note"><strong>Why separate?</strong> DRR is a short service-fee collection. Mediation is an ongoing reduced-payment collection. Keeping them separate prevents the mediation instalment from being labelled as a DRR fee and allows separate start dates.</div>
+              {((removalDebiCheck.history?.length || 0) + (mediationDebiCheck.history?.length || 0)) > 0 ? <div className="mandate-history-grid"><div><h4>Removal history</h4><ul className="clean-list mandate-history">{(removalDebiCheck.history || []).slice(-4).map((event, index) => <li key={`removal-${event.at}-${index}`}>{event.at ? new Date(event.at).toLocaleString() : ''} · {event.action}{event.amount ? ` · ${currency(event.amount)}` : ''}{event.startDate ? ` · starts ${event.startDate}` : ''}</li>)}</ul></div><div><h4>Mediation history</h4><ul className="clean-list mandate-history">{(mediationDebiCheck.history || []).slice(-4).map((event, index) => <li key={`mediation-${event.at}-${index}`}>{event.at ? new Date(event.at).toLocaleString() : ''} · {event.action}{event.amount ? ` · ${currency(event.amount)}` : ''}{event.startDate ? ` · starts ${event.startDate}` : ''}</li>)}</ul></div></div> : <p className="muted">No separate DebiCheck history yet.</p>}
             </div>
             <div className="panel-card">
-              <div className="section-heading"><div><h2>Client portal links</h2><p>Links include tenant and client ID so documents/signatures stay isolated.</p></div><button className="secondary" onClick={createPortalLinks}>Create Legacy Links</button></div>
+              <div className="section-heading"><div><h2>Client portal links</h2><p>Links include tenant and client ID. Only the required document set for the selected service is requested.</p></div><button className="secondary" onClick={createPortalLinks}>Create Legacy Links</button></div>
               <div className="link-grid">
                 <div><span>Signature Link</span>{client.signature?.link || client.portalLinks?.signatureLink ? <a href={client.signature?.link || client.portalLinks?.signatureLink}>{client.signature?.link || client.portalLinks?.signatureLink}</a> : <small>Not created yet</small>}</div>
                 <div><span>Upload Documents Link</span>{client.documents?.uploadLink || client.portalLinks?.uploadLink ? <a href={client.documents?.uploadLink || client.portalLinks?.uploadLink}>{client.documents?.uploadLink || client.portalLinks?.uploadLink}</a> : <small>Not created yet</small>}</div>
@@ -1329,6 +2101,7 @@ export default function App() {
                 <StatCard label="Original Instalments" value={currency(coach.totals.originalInstalment)} sub="Before proposal" />
                 <StatCard label="Reduced Amount" value={currency(coach.totals.reducedInstalment)} sub="Admin/PDA proposal" />
                 <StatCard label="Included Creditors" value={String(accounts.filter((account) => account.included).length)} sub="To hand over" />
+                <StatCard label="Living Expenses" value={currency(totalLivingExpenses)} sub="Captured monthly budget" />
                 <StatCard label="NuPay Status" value={client.nupayMandate?.status || 'Not Sent'} sub={client.nupayMandate?.mandateId || 'No mandate ID'} />
               </div>
               <div className="form-grid">
@@ -1353,43 +2126,236 @@ export default function App() {
           ) : (
           <section className="view-stack">
             <div className="panel-card">
-              <div className="section-heading"><div><h2>Admin queue</h2><p>Tenant-isolated admin view showing submitted clients, documents, fees, reduced amounts, included creditors, signature, NuPay and PDA info.</p></div><button className="secondary" onClick={loadAdminClients}>Refresh Admin Queue</button></div>
+              <div className="section-heading">
+                <div><h2>Admin service workflow</h2><p>Admin now follows the exact service sequence from handover to closure. For Debt Review, statutory processing starts only after signed Form 16 is confirmed.</p></div>
+                <button className="secondary" onClick={loadAdminClients}>Refresh Admin Queue</button>
+              </div>
               <div className="client-grid admin-grid">
-                {(adminClients.length ? adminClients : clients).map((item) => (
-                  <button key={item.id} className={`client-card ${client.id === item.id ? 'selected' : ''}`} onClick={() => setClient(withWorkflowDefaults(item))}>
-                    <div className="client-card-top"><strong>{item.fullName || 'Unnamed Client'}</strong><Badge tone={item.adminHandover?.status === 'Submitted' ? 'good' : 'neutral'}>{item.adminHandover?.status || 'Not Submitted'}</Badge></div>
-                    <span>{item.serviceType}</span>
-                    <span>Reduced: {currency(item.coach?.totals.reducedInstalment || 0)}</span>
-                    <span>NuPay: {item.nupayMandate?.status || 'Not Sent'}</span>
-                    <span>PDA: {item.pdaInfo?.status || 'Not Submitted'}</span>
+                {(adminClients.length ? adminClients : clients).map((item) => {
+                  const itemWorkflow = withWorkflowDefaults(item).adminWorkflow;
+                  const done = (itemWorkflow?.tasks || []).filter((task) => ['Done', 'Completed'].includes(task.status)).length;
+                  const total = itemWorkflow?.tasks?.length || 0;
+                  return (
+                    <button key={item.id} className={`client-card ${client.id === item.id ? 'selected' : ''}`} onClick={() => setClient(withWorkflowDefaults(item))}>
+                      <div className="client-card-top"><strong>{item.fullName || 'Unnamed Client'}</strong><Badge tone={item.adminHandover?.status === 'Submitted' ? 'good' : 'neutral'}>{item.adminHandover?.status || 'Not Submitted'}</Badge></div>
+                      <span>{(itemWorkflow?.services || [item.serviceType]).join(' + ')}</span>
+                      <span>Workflow: {done}/{total} done</span>
+                      <span>NuPay: {item.nupayMandate?.status || 'Not Sent'}</span>
+                      <span>PDA: {item.pdaInfo?.status || 'Not Submitted'}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="panel-card admin-service-control">
+              <div className="section-heading">
+                <div>
+                  <h3>{client.fullName || 'Selected client'} admin file</h3>
+                  <p>Service/s: {(client.adminWorkflow?.services || [coach.service]).join(' + ')}</p>
+                </div>
+                <div className="button-row">
+                  <select value={client.adminWorkflow?.overallStatus || 'Handover Received'} onChange={(event) => updateAdminWorkflowStatus(event.target.value)}>
+                    <option>Handover Received</option><option>Intake Verification</option><option>Documents Complete</option><option>Form 16 Accepted</option><option>17.1 / COB Stage</option><option>Assessment / 17.2 Stage</option><option>Proposal / Legal Stage</option><option>PDA Setup</option><option>Active Monitoring</option><option>Clearance / Closure</option><option>Completed</option><option>On Hold</option><option>Blocked</option>
+                  </select>
+                  <button className="primary" onClick={saveClient}>Save Admin File</button>
+                </div>
+              </div>
+              <div className="stats-grid compact">
+                <StatCard label="Original Instalments" value={currency(coach.totals.originalInstalment)} sub="Before admin proposal" />
+                <StatCard label="Reduced Proposal" value={currency(coach.totals.reducedInstalment)} sub="Editable per account" />
+                <StatCard label="Included Creditors" value={String(accounts.filter((account) => account.included).length)} sub="To contact / submit" />
+                <StatCard label="Living Expenses" value={currency(totalLivingExpenses)} sub="Captured monthly budget" />
+                <StatCard label="Documents" value={`${(client.documents?.items || []).filter((doc) => doc.status === 'Uploaded').length}/${client.documents?.items?.length || 0}`} sub="Uploaded / required" />
+              </div>
+              {(client.adminWorkflow?.services || [coach.service]).includes('Debt Review Sales Coach') ? (
+                <div className="compliance-strip">
+                  <strong>Debt Review sequence controls</strong>
+                  <span>Starts internally at consultant handover. Legal Debt Review starts at signed Form 16, then 17.1/COB, assessment/17.2, proposal, legal route, PDA, aftercare, Form 19 and bureau closure.</span>
+                </div>
+              ) : null}
+              <div className="service-chip-row">
+                {(client.adminWorkflow?.services || [coach.service]).map((service) => (
+                  <button key={service} className={client.adminWorkflow?.activeService === service ? 'service-chip active' : 'service-chip'} onClick={() => updateAdminWorkflowStatus(client.adminWorkflow?.overallStatus || 'Handover Received', service)}>
+                    {service}
                   </button>
                 ))}
               </div>
             </div>
+
             <div className="two-column">
               <div className="panel-card">
-                <h3>Admin package for {client.fullName}</h3>
-                <div className="info-list">
-                  <div><span>Service</span><strong>{coach.service}</strong></div>
-                  <div><span>DRR Fee</span><strong>{coach.service === 'Debt Review Removal' ? currency(drrFee) : 'N/A'}</strong></div>
-                  <div><span>Original instalments</span><strong>{currency(coach.totals.originalInstalment)}</strong></div>
-                  <div><span>Reduced amount</span><strong>{currency(coach.totals.reducedInstalment)}</strong></div>
-                  <div><span>Signature</span><strong>{client.signature?.status || 'Not Sent'}</strong></div>
-                  <div><span>NuPay</span><strong>{client.nupayMandate?.status || 'Not Sent'}</strong></div>
-                  <div><span>PDA</span><strong>{client.pdaInfo?.status || 'Not Submitted'} {client.pdaInfo?.pdaReference ? `· ${client.pdaInfo.pdaReference}` : ''}</strong></div>
+                <h3>Service-specific admin checklist</h3>
+                <div className="admin-task-list">
+                  {(client.adminWorkflow?.tasks || [])
+                    .filter((task) => !client.adminWorkflow?.activeService || task.service === client.adminWorkflow.activeService)
+                    .slice()
+                    .sort((a, b) => (a.sequence || 0) - (b.sequence || 0))
+                    .map((task) => (
+                    <div className="admin-task" key={task.id}>
+                      <div>
+                        <small>{task.stepCode || `Step ${task.sequence || ''}`} · {task.service} · {task.phase}</small>
+                        <strong>{task.label}</strong>
+                        <div className="task-meta">
+                          {task.ncaMinimum ? <em>Minimum control</em> : null}
+                          {task.dueBusinessDays ? <em>Due target: {task.dueBusinessDays} business days{task.dueFrom ? ` from ${task.dueFrom}` : ''}</em> : null}
+                          {task.gate ? <em>Gate: {task.gate}</em> : null}
+                          {task.outcome ? <em>Outcome: {task.outcome}</em> : null}
+                          {task.regulationRef ? <em>{task.regulationRef}</em> : null}
+                          {task.evidenceRequired ? <em>Evidence: {task.evidenceRequired}</em> : null}
+                        </div>
+                        {task.notes ? <span>{task.notes}</span> : null}
+                      </div>
+                      <select value={task.status} onChange={(event) => updateAdminTask(task, event.target.value)}>
+                        <option>Not Started</option><option>In Progress</option><option>Waiting Client</option><option>Waiting Creditor</option><option>Submitted</option><option>Done</option><option>Blocked</option><option>Not Applicable</option>
+                      </select>
+                    </div>
+                  ))}
                 </div>
-                <div className="button-row"><button className="secondary" onClick={cancelNupayMandate}>Cancel Mandate</button><button className="primary" onClick={resendNupayMandate}>Send New Mandate</button></div>
+              </div>
+
+              <div className="panel-card">
+                <h3>Documents, signature, NuPay and PDA controls</h3>
+                <div className="info-list">
+                  <div><span>Signature</span><strong>{client.signature?.status || 'Not Sent'}</strong></div>
+                  <div><span>NuPay DebiCheck</span><strong>{client.nupayMandate?.status || 'Not Sent'} {client.nupayMandate?.mandateId ? `· ${client.nupayMandate.mandateId}` : ''}</strong></div>
+                  <div><span>PDA status</span><strong>{client.pdaInfo?.status || 'Not Submitted'} {client.pdaInfo?.pdaReference ? `· ${client.pdaInfo.pdaReference}` : ''}</strong></div>
+                  <div><span>Living expenses budget</span><strong>{currency(totalLivingExpenses)}</strong></div>
+                  <div><span>Available after reduced payment</span><strong>{currency(availableAfterReducedPayment)}</strong></div>
+                  <div><span>DRR fee</span><strong>{(client.adminWorkflow?.services || []).includes('Debt Review Removal') ? currency(drrFee) : 'N/A'}</strong></div>
+                </div>
+                <div className="button-row"><button className="secondary" onClick={cancelNupayMandate}>Cancel Mandate</button><button className="primary" onClick={resendNupayMandate}>Send New Mandate</button><button className="secondary" onClick={requestDocuments}>Send Docs Link</button><button className="secondary" onClick={sendSignatureLink}>Send Signature Link</button></div>
+                <div className="mini-doc-list">
+                  {(client.documents?.items || []).map((doc) => <div key={doc.name}><span>{doc.name}</span><Badge tone={doc.status === 'Uploaded' ? 'good' : doc.status === 'Requested' ? 'warn' : 'neutral'}>{doc.status}</Badge></div>)}
+                </div>
+              </div>
+            </div>
+
+            <div className="panel-card">
+              <div className="section-heading"><div><h3>Creditor action tracker</h3><p>Admin can track every included creditor through proposal, response, counter-offer and acceptance.</p></div></div>
+              <div className="table-wrap slim"><table className="accounts-table"><thead><tr><th>Creditor</th><th>Account</th><th>Service</th><th>Current</th><th>Original</th><th>Proposal</th><th>Status</th><th>Response / Notes</th></tr></thead><tbody>
+                {(client.adminWorkflow?.creditorActions || []).map((action) => (
+                  <tr key={action.id}>
+                    <td>{action.creditorName}</td><td>{action.accountNumber}</td><td>{action.service}</td><td>{currency(action.currentBalance)}</td><td>{currency(action.originalInstallment)}</td>
+                    <td><input value={action.proposedAmount} onChange={(event) => updateCreditorAction(action, 'proposedAmount', toNumber(event.target.value))} /></td>
+                    <td><select value={action.status} onChange={(event) => updateCreditorAction(action, 'status', event.target.value)}><option>Not Contacted</option><option>Proposal Sent</option><option>Accepted</option><option>Rejected</option><option>Counter Offer</option><option>Escalated</option><option>Completed</option></select></td>
+                    <td><input value={action.notes || action.response || ''} onChange={(event) => updateCreditorAction(action, 'notes', event.target.value)} /></td>
+                  </tr>
+                ))}
+              </tbody></table></div>
+            </div>
+
+            <div className="two-column">
+              <div className="panel-card">
+                <h3>Fees and payment controls</h3>
+                <div className="fee-ledger">
+                  {(client.adminWorkflow?.feeItems || []).map((fee) => (
+                    <div className="fee-line" key={fee.id}>
+                      <div><strong>{fee.label}</strong><small>{fee.service}</small></div>
+                      <input value={fee.amount} onChange={(event) => updateFeeItem(fee, 'amount', toNumber(event.target.value))} />
+                      <select value={fee.status} onChange={(event) => updateFeeItem(fee, 'status', event.target.value)}><option>Not Invoiced</option><option>Invoiced</option><option>Partially Paid</option><option>Paid</option><option>Pending Acceptance</option><option>Cancelled</option></select>
+                    </div>
+                  ))}
+                </div>
               </div>
               <div className="panel-card">
-                <h3>Uploaded docs and included creditors</h3>
-                <ul className="clean-list">
-                  {(client.documents?.items || []).map((doc) => <li key={doc.name}>{doc.name}: <strong>{doc.status}</strong>{doc.filename ? ` · ${doc.filename}` : ''}</li>)}
-                </ul>
-                <div className="table-wrap slim"><table className="accounts-table"><thead><tr><th>Creditor</th><th>Current</th><th>Original</th><th>Reduced</th></tr></thead><tbody>{accounts.filter((account) => account.included).map((account) => <tr key={account.id}><td>{account.creditorName}</td><td>{currency(account.currentBalance)}</td><td>{currency(account.monthlyInstallment)}</td><td>{currency(account.reducedAmount)}</td></tr>)}</tbody></table></div>
+                <h3>PDA information</h3>
+                <div className="form-grid single">
+                  <Field label="PDA Name"><input value={client.pdaInfo?.pdaName || ''} onChange={(event) => updatePdaField('pdaName', event.target.value)} /></Field>
+                  <Field label="PDA Reference"><input value={client.pdaInfo?.pdaReference || ''} onChange={(event) => updatePdaField('pdaReference', event.target.value)} /></Field>
+                  <Field label="Proposal Amount"><input value={client.pdaInfo?.proposalAmount || coach.totals.reducedInstalment} onChange={(event) => updatePdaField('proposalAmount', toNumber(event.target.value))} /></Field>
+                  <Field label="Payment Start Date"><input type="date" value={client.pdaInfo?.paymentStartDate || ''} onChange={(event) => updatePdaField('paymentStartDate', event.target.value)} /></Field>
+                  <Field label="PDA Status"><select value={client.pdaInfo?.status || 'Not Submitted'} onChange={(event) => updatePdaField('status', event.target.value)}><option>Not Submitted</option><option>Ready for PDA</option><option>Submitted to PDA</option><option>PDA Active</option><option>PDA Query</option><option>Cancelled</option></select></Field>
+                </div>
+                <div className="button-row"><button className="primary" onClick={savePdaInfo}>Save PDA Info</button></div>
               </div>
             </div>
           </section>
         ))}
+
+        {activeView === 'knowledge' && (
+          <section className="view-stack">
+            <div className="dashboard-hero knowledge-hero">
+              <div>
+                <Badge tone="blue">Product knowledge academy</Badge>
+                <h2>Services training and consultant assessment</h2>
+                <p>Use this tab to train consultants on Debt Review, Debt Review Removal, Debt Mediation, NuPay DebiCheck and admin handover rules. Assessment scores are stored per tenant and ranked for manager review.</p>
+                <div className="button-row">
+                  <button className="primary" onClick={loadProductKnowledge}>Refresh Training</button>
+                  <button className="secondary" onClick={submitKnowledgeAssessment}>Submit Assessment</button>
+                </div>
+              </div>
+              <div className="panel-card compact-panel">
+                <h3>Your latest result</h3>
+                <div className="info-list">
+                  <div><span>Score</span><strong>{assessmentResult ? `${assessmentResult.scorePercent}%` : 'Not assessed'}</strong></div>
+                  <div><span>Level</span><strong>{assessmentResult?.level || 'Complete the quiz'}</strong></div>
+                  <div><span>Correct</span><strong>{assessmentResult ? `${assessmentResult.correct}/${assessmentResult.total}` : '0/0'}</strong></div>
+                </div>
+              </div>
+            </div>
+
+            <div className="knowledge-grid">
+              {knowledgeModules.map((module) => (
+                <div className="panel-card knowledge-card" key={module.id}>
+                  <Badge tone={module.service === 'Debt Review Removal' ? 'danger' : module.service === 'Debt Mediation' ? 'blue' : 'warn'}>{module.service}</Badge>
+                  <h3>{module.title}</h3>
+                  <p>{module.summary}</p>
+                  <h4>Product knowledge</h4>
+                  <ul className="clean-list">{module.keyPoints.map((point) => <li key={point}>{point}</li>)}</ul>
+                  <h4>Sales positioning</h4>
+                  <ul className="clean-list">{module.salesAngles.map((point) => <li key={point}>{point}</li>)}</ul>
+                </div>
+              ))}
+              {!knowledgeModules.length ? <div className="empty-state">Training content is loading. Click Refresh Training if it does not appear.</div> : null}
+            </div>
+
+            <div className="two-column">
+              <div className="panel-card">
+                <div className="section-heading"><div><h2>Assessment quiz</h2><p>Consultants are ranked by their latest assessment result. This covers all services offered.</p></div><Badge tone="neutral">Pass mark 80%</Badge></div>
+                <div className="question-list">
+                  {knowledgeQuestions.map((question, index) => (
+                    <div className="question-card" key={question.id}>
+                      <small>Question {index + 1} · {question.service}</small>
+                      <strong>{question.question}</strong>
+                      <div className="answer-options">
+                        {question.options.map((option, optionIndex) => (
+                          <label key={`${question.id}-${optionIndex}`} className="checkline">
+                            <input type="radio" name={question.id} checked={assessmentAnswers[question.id] === optionIndex} onChange={() => setAssessmentAnswers((current) => ({ ...current, [question.id]: optionIndex }))} />
+                            {option}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="button-row"><button className="primary" onClick={submitKnowledgeAssessment}>Submit Assessment</button><button className="secondary" onClick={() => setAssessmentAnswers({})}>Clear Answers</button></div>
+              </div>
+
+              <div className="panel-card">
+                <div className="section-heading"><div><h2>Knowledge leaderboard</h2><p>Manager can use this ranking to identify strong consultants and consultants needing coaching.</p></div></div>
+                <div className="leaderboard-table-wrap compact-leaderboard">
+                  <table className="leaderboard-table">
+                    <thead><tr><th>Rank</th><th>Consultant</th><th>Score</th><th>Level</th><th>Attempts</th></tr></thead>
+                    <tbody>
+                      {knowledgeLeaderboard.map((row) => (
+                        <tr key={row.userId}>
+                          <td><span className="rank-pill">#{row.rank}</span></td>
+                          <td><strong>{row.name}</strong><small>{row.email}</small></td>
+                          <td><strong>{row.scorePercent}%</strong><small>{row.correct}/{row.total}</small></td>
+                          <td><Badge tone={row.passed ? 'good' : row.scorePercent ? 'warn' : 'neutral'}>{row.level}</Badge></td>
+                          <td>{row.attempts}</td>
+                        </tr>
+                      ))}
+                      {!knowledgeLeaderboard.length ? <tr><td colSpan={5}>No assessment results yet.</td></tr> : null}
+                    </tbody>
+                  </table>
+                </div>
+                {assessmentResult?.review?.length ? <div className="assessment-review"><h3>Latest review</h3><ul className="clean-list">{assessmentResult.review.map((item) => <li key={item.id}>{item.correct ? '✅' : '❌'} {item.question}</li>)}</ul></div> : null}
+              </div>
+            </div>
+          </section>
+        )}
 
         {activeView === 'settings' && (
           <section className="view-stack">
@@ -1398,21 +2364,12 @@ export default function App() {
               <div className="form-grid">
                 <Field label="Backend API Base"><input value={apiBase} onChange={(event) => setApiBase(event.target.value)} /></Field>
                 <Field label="Current Tenant"><input value={currentTenant?.name || tenantId} readOnly /></Field>
+                <Field label="NCR Registration"><input value={currentTenant?.ncr || ''} readOnly /></Field>
+                <Field label="Tenant Contact"><input value={currentTenant?.email || currentTenant?.phone || ''} readOnly /></Field>
                 <Field label="Current User / Role"><input value={currentUser ? `${currentUser.name} · ${currentUser.role}` : userId} readOnly /></Field>
               </div>
               <div className="button-row settings-buttons"><button className="primary" onClick={saveApiBase}>Save API and Reload</button><button className="secondary" onClick={() => loadClients()}>Reload Client List</button><button className="secondary" onClick={() => { localStorage.removeItem('fintastic_logged_in'); setLoggedIn(false); }}>Switch Tenant/User</button></div>
-              <form className="panel-card" onSubmit={createTenant}>
-                <h3>Create a new tenant</h3>
-                <p>Create the company workspace and its first administrator. The tenant is saved in the backend database.</p>
-                <div className="form-grid">
-                  <Field label="Tenant / Company Name"><input required value={tenantForm.name} onChange={(event) => setTenantForm({ ...tenantForm, name: event.target.value })} /></Field>
-                  <Field label="NCRDC Number"><input value={tenantForm.ncr} onChange={(event) => setTenantForm({ ...tenantForm, ncr: event.target.value })} /></Field>
-                  <Field label="Administrator Name"><input value={tenantForm.adminName} onChange={(event) => setTenantForm({ ...tenantForm, adminName: event.target.value })} /></Field>
-                  <Field label="Administrator Email"><input type="email" value={tenantForm.adminEmail} onChange={(event) => setTenantForm({ ...tenantForm, adminEmail: event.target.value })} /></Field>
-                </div>
-                <div className="button-row"><button className="primary" type="submit" disabled={creatingTenant}>{creatingTenant ? 'Creating Tenant…' : 'Create Tenant'}</button>{tenantCreateMessage && <span>{tenantCreateMessage}</span>}</div>
-              </form>
-              <div className="panel-card tenant-rules"><h3>Isolation rules built in</h3><ul className="clean-list"><li>Client list calls use <code>GET /api/clients</code> with <code>X-Tenant-ID</code>.</li><li>Uploads use the same header and save files under the configured tenant data directory.</li><li>Backend rejects client reads/updates when the client is not inside the active tenant.</li><li>Users in the same tenant share the same clients because they query the same tenant database.</li></ul></div>
+              <div className="panel-card tenant-rules"><h3>Isolation rules built in</h3><ul className="clean-list"><li>Client list calls use <code>GET /api/clients</code> with <code>X-Tenant-ID</code>.</li><li>Uploads use the same header and save files under <code>backend/uploads/&lt;tenant_id&gt;</code>.</li><li>Backend rejects client reads/updates when the client is not inside the active tenant.</li><li>Users in the same tenant share the same clients because they query the same tenant database.</li></ul></div>
             </div>
           </section>
         )}

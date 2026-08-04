@@ -1,4 +1,4 @@
-"""
+r"""
 Fin-Tastic Sales Coach - Multi-Tenant Refined Backend
 
 Run:
@@ -20,11 +20,11 @@ import os
 import re
 import secrets
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request
 from flask_cors import CORS
 
 try:
@@ -48,11 +48,10 @@ except Exception:  # pragma: no cover
     pdfium = None
 
 APP_NAME = "Fin-Tastic Sales Coach API"
-APP_VERSION = "2026.07-datanamix-ocr-parser-fix"
+APP_VERSION = "2026.07-parser-dashboard-cleanup"
 BASE_DIR = Path(__file__).resolve().parent
-DATA_DIR = Path(os.environ.get("FINTASTIC_DATA_DIR", str(BASE_DIR / "data")))
-UPLOAD_DIR = Path(os.environ.get("FINTASTIC_UPLOAD_DIR", str(DATA_DIR / "uploads")))
-FRONTEND_DIST = BASE_DIR / "frontend_dist"
+DATA_DIR = BASE_DIR / "data"
+UPLOAD_DIR = BASE_DIR / "uploads"
 DB_PATH = DATA_DIR / "sales_coach_db.json"
 for folder in (DATA_DIR, UPLOAD_DIR):
     folder.mkdir(parents=True, exist_ok=True)
@@ -66,6 +65,42 @@ CORS(
     allow_headers=["Content-Type", "Authorization", "X-Tenant-ID", "x-tenant-id", "X-User-ID", "x-user-id", "Accept", "Origin"],
     methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
 )
+
+# Hard CORS fallback. Flask-CORS can miss some preflight/error responses on
+# Windows dev servers when a route throws or a method is not registered.
+# This guarantees the React app at localhost:5173 receives CORS headers for
+# every API/portal response, including 403/404/405/500 and OPTIONS preflights.
+CORS_ALLOW_HEADERS = "Content-Type, Authorization, X-Tenant-ID, x-tenant-id, X-User-ID, x-user-id, Accept, Origin"
+CORS_ALLOW_METHODS = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+
+
+@app.before_request
+def handle_cors_preflight():
+    if request.method == "OPTIONS":
+        return ("", 204)
+    return None
+
+
+@app.after_request
+def add_cors_headers(response):
+    origin = request.headers.get("Origin") or "*"
+    response.headers["Access-Control-Allow-Origin"] = origin
+    response.headers["Vary"] = "Origin"
+    response.headers["Access-Control-Allow-Credentials"] = "true"
+    response.headers["Access-Control-Allow-Headers"] = CORS_ALLOW_HEADERS
+    response.headers["Access-Control-Allow-Methods"] = CORS_ALLOW_METHODS
+    response.headers["Access-Control-Max-Age"] = "86400"
+    return response
+
+
+@app.errorhandler(Exception)
+def handle_unexpected_error(exc):
+    # Keep backend failures visible to the frontend instead of showing a vague
+    # browser CORS error. In debug mode Flask will still log the stack trace.
+    code = getattr(exc, "code", 500)
+    if code in {400, 401, 403, 404, 405}:
+        return jsonify({"success": False, "error": getattr(exc, "description", str(exc)), "status": code}), code
+    return jsonify({"success": False, "error": str(exc), "status": 500}), 500
 
 DEFAULT_TENANTS = [
     {
@@ -96,6 +131,38 @@ DEFAULT_TENANTS = [
             {"id": "pta-agent-1", "name": "Pretoria Consultant", "role": "Consultant", "email": "consultant@pta.local"},
         ],
     },
+    {
+        "id": "khusela-debt-management",
+        "name": "Khusela Debt Management",
+        "tradingName": "Khusela Debt Management",
+        "fullName": "Rosande Ruth Roberts",
+        "ncr": "NCRDC3999",
+        "phone": "076 949 0966",
+        "fax": "",
+        "email": "admin@kdebt.co.za",
+        "finalRegistrationDate": "2022-05-23",
+        "physicalAddress": "74 Maynard Road, 3rd Floor, CHB Building, Wynberg",
+        "postalAddress": "25 Batts Road, Wynberg, 7800",
+        "town": "Cape Town",
+        "users": [
+            {"id": "khusela-consultant-01", "name": "Khusela Consultant 1", "role": "Consultant", "email": "consultant01@kdebt.co.za"},
+            {"id": "khusela-consultant-02", "name": "Khusela Consultant 2", "role": "Consultant", "email": "consultant02@kdebt.co.za"},
+            {"id": "khusela-consultant-03", "name": "Khusela Consultant 3", "role": "Consultant", "email": "consultant03@kdebt.co.za"},
+            {"id": "khusela-consultant-04", "name": "Khusela Consultant 4", "role": "Consultant", "email": "consultant04@kdebt.co.za"},
+            {"id": "khusela-consultant-05", "name": "Khusela Consultant 5", "role": "Consultant", "email": "consultant05@kdebt.co.za"},
+            {"id": "khusela-consultant-06", "name": "Khusela Consultant 6", "role": "Consultant", "email": "consultant06@kdebt.co.za"},
+            {"id": "khusela-consultant-07", "name": "Khusela Consultant 7", "role": "Consultant", "email": "consultant07@kdebt.co.za"},
+            {"id": "khusela-consultant-08", "name": "Khusela Consultant 8", "role": "Consultant", "email": "consultant08@kdebt.co.za"},
+            {"id": "khusela-consultant-09", "name": "Khusela Consultant 9", "role": "Consultant", "email": "consultant09@kdebt.co.za"},
+            {"id": "khusela-consultant-10", "name": "Khusela Consultant 10", "role": "Consultant", "email": "consultant10@kdebt.co.za"},
+            {"id": "khusela-admin-01", "name": "Khusela Admin 1", "role": "Admin", "email": "admin01@kdebt.co.za"},
+            {"id": "khusela-admin-02", "name": "Khusela Admin 2", "role": "Admin", "email": "admin02@kdebt.co.za"},
+            {"id": "khusela-admin-03", "name": "Khusela Admin 3", "role": "Admin", "email": "admin03@kdebt.co.za"},
+            {"id": "khusela-admin-04", "name": "Khusela Admin 4", "role": "Admin", "email": "admin04@kdebt.co.za"},
+            {"id": "khusela-manager-01", "name": "Rosande Ruth Roberts", "role": "Manager", "email": "admin@kdebt.co.za"},
+            {"id": "khusela-manager-02", "name": "Khusela Operations Manager", "role": "Manager", "email": "manager02@kdebt.co.za"}
+        ],
+    },
 ]
 
 CREDITOR_DIRECTORY: Dict[str, Dict[str, str]] = {
@@ -118,6 +185,93 @@ CREDITOR_DIRECTORY: Dict[str, Dict[str, str]] = {
 
 FURNITURE_KEYWORDS = ["russells", "bradlows", "lewis", "beares", "ok furniture", "fair price", "house & home", "rochester", "dial-a-bed", "jd group", "jdg"]
 ASSET_KEYWORDS = ["home loan", "bond", "mortgage", "vehicle", "wesbank", "mfc", "toyota financial", "vw financial", "motor", "auto"]
+DRR_SERVICE_FEE = 7000.0
+
+PRODUCT_KNOWLEDGE_MODULES: List[Dict[str, Any]] = [
+    {
+        "id": "debt-review",
+        "title": "Debt Review",
+        "service": "Debt Review Sales Coach",
+        "summary": "Debt Review is the statutory route for over-indebted consumers who need formal assessment, creditor notices, restructuring and payment monitoring.",
+        "keyPoints": [
+            "Do not begin statutory processing before signed Form 16 is received.",
+            "Minimum client-upload docs: signed Form 16, ID copy, latest payslip and 3 months bank statements.",
+            "Admin sequence: intake, Form 17.1, COB requests, COB capture, affordability assessment, Form 17.2, proposal, legal route, PDA/payment monitoring and eventually Form 19 where applicable.",
+            "The consultant must not guarantee approval, court outcomes, asset protection or clearance; the registered debt counsellor/admin workflow must assess eligibility.",
+        ],
+        "salesAngles": [
+            "Lead with affordability, protection and stability.",
+            "Use the budget to show why the current instalments are unsustainable.",
+            "Explain the benefit of one structured plan instead of many broken promises to creditors.",
+        ],
+    },
+    {
+        "id": "debt-review-removal",
+        "title": "Debt Review Removal",
+        "service": "Debt Review Removal",
+        "summary": "Debt Review Removal focuses on verifying the client's debt-review status and selecting the correct upliftment/removal route.",
+        "keyPoints": [
+            "Minimum client-upload docs: ID copy, 3 months bank statements, signed Form 17.W / 17.3, latest payslip and POA.",
+            "If the client has no active balances, the sales conversation should focus on removing the flag and rebuilding credit-worthiness.",
+            "If balances remain, removal can become a double sale with mediation where appropriate.",
+            "The R7,000 removal fee can be collected by NuPay DebiCheck over 1 to 3 months where accepted.",
+        ],
+        "salesAngles": [
+            "Focus on status cleanup, credit-worthiness and future opportunity, not monthly debt relief when balances are zero.",
+            "Never promise instant score improvement or guaranteed finance approval.",
+            "Explain that paid-up accounts and a removed debt-review flag are two different outcomes.",
+        ],
+    },
+    {
+        "id": "debt-mediation",
+        "title": "Debt Mediation",
+        "service": "Debt Mediation",
+        "summary": "Debt Mediation is a non-statutory negotiation service for clients who need reduced payment proposals without positioning it as Debt Review protection.",
+        "keyPoints": [
+            "Minimum client-upload docs: ID copy, 3 months bank statements, latest payslip and POA.",
+            "The consultant must be clear that mediation is not statutory Debt Review protection.",
+            "Use included accounts only and match reduced amounts to affordability.",
+            "NuPay DebiCheck may collect the ongoing reduced payment where the client accepts the mandate.",
+        ],
+        "salesAngles": [
+            "Show the original instalments versus the reduced proposal.",
+            "Use budget pressure points to explain why one realistic plan is better than multiple unaffordable promises.",
+            "Position the savings amount as breathing room for essentials and consistency.",
+        ],
+    },
+    {
+        "id": "nupay-pda-admin",
+        "title": "NuPay, PDA and Admin Handover",
+        "service": "Workflow",
+        "summary": "Consultants must complete accurate handover data so admin can continue the correct service workflow and payment setup.",
+        "keyPoints": [
+            "NuPay DebiCheck can apply to DRR fee, mediation reduced payment, or both when applicable.",
+            "The DRR 1/2/3 month selector only applies to the removal fee, not ongoing mediation payments.",
+            "Admin must see documents, signature, fees, reduced amounts, included creditors, NuPay status and PDA fields.",
+            "Tenant isolation means consultants and managers only see clients inside their own tenant.",
+        ],
+        "salesAngles": [
+            "Good data protects the sale after handover.",
+            "The consultant should not submit to admin until the client, budget, accounts and service route make sense.",
+            "A complete document pack improves conversion and reduces admin delays.",
+        ],
+    },
+]
+
+PRODUCT_KNOWLEDGE_QUESTIONS: List[Dict[str, Any]] = [
+    {"id": "q1", "moduleId": "debt-review", "service": "Debt Review", "question": "What document starts the legal Debt Review application process?", "options": ["Signed Form 16", "Power of Attorney only", "NuPay mandate", "Credit report only"], "answerIndex": 0},
+    {"id": "q2", "moduleId": "debt-review", "service": "Debt Review", "question": "Which client-upload documents are required for Debt Review in Fin-Tastic?", "options": ["Form 16, ID, latest payslip and 3 months bank statements", "ID, proof of address, POPIA and photos", "Only a credit report", "POA, Form 17.W and paid-up letters only"], "answerIndex": 0},
+    {"id": "q3", "moduleId": "debt-review", "service": "Debt Review", "question": "What should the consultant avoid promising in Debt Review?", "options": ["Guaranteed approval or legal outcome", "That admin will verify documents", "That affordability matters", "That the budget must be captured"], "answerIndex": 0},
+    {"id": "q4", "moduleId": "debt-review-removal", "service": "Debt Review Removal", "question": "When a DRR client has no balances, what should the sales conversation focus on?", "options": ["Reduced instalments only", "Removing the flag and rebuilding credit-worthiness", "Opening new credit immediately", "Ignoring the debt-review status"], "answerIndex": 1},
+    {"id": "q5", "moduleId": "debt-review-removal", "service": "Debt Review Removal", "question": "Which fee can be collected via NuPay DebiCheck for DRR where accepted?", "options": ["R7,000 removal service fee", "A random monthly amount", "Only a creditor instalment", "No fee can ever be collected"], "answerIndex": 0},
+    {"id": "q6", "moduleId": "debt-review-removal", "service": "Debt Review Removal", "question": "Which documents are required for Debt Review Removal in this workflow?", "options": ["ID, 3 months bank statements, signed 17.W/17.3, latest payslip and POA", "Signed Form 16 only", "Proof of address and photos only", "Only bank statements"], "answerIndex": 0},
+    {"id": "q7", "moduleId": "debt-mediation", "service": "Debt Mediation", "question": "Debt Mediation should be positioned as...", "options": ["Statutory Debt Review protection", "A non-statutory negotiation/reduced-payment service", "A guaranteed loan approval", "A court order"], "answerIndex": 1},
+    {"id": "q8", "moduleId": "debt-mediation", "service": "Debt Mediation", "question": "What must the consultant compare when selling mediation?", "options": ["Original instalments versus reduced proposal and budget affordability", "Only the client's age", "Only the credit score", "Only the consultant's target"], "answerIndex": 0},
+    {"id": "q9", "moduleId": "nupay-pda-admin", "service": "NuPay", "question": "The 1/2/3 month selector in NuPay applies to...", "options": ["Ongoing mediation payments", "Debt Review Removal fee collection period", "Every account balance", "PDA reference number"], "answerIndex": 1},
+    {"id": "q10", "moduleId": "nupay-pda-admin", "service": "Admin Handover", "question": "Before submitting to admin, the consultant should ensure...", "options": ["The selected service, client info, accounts, budget, documents/signature and NuPay status are clear", "Only the client's first name is captured", "The tenant is switched to another company", "No documents are requested"], "answerIndex": 0},
+    {"id": "q11", "moduleId": "nupay-pda-admin", "service": "Tenant Isolation", "question": "Tenant isolation means...", "options": ["All companies share one client list", "Each tenant sees only its own clients and users", "Consultants can see competitor clients", "Admin users bypass every tenant"], "answerIndex": 1},
+    {"id": "q12", "moduleId": "debt-mediation", "service": "Sales Coach", "question": "The best tonality when discussing financial pressure is...", "options": ["Calm, protective and numbers-based", "Fear-based and aggressive", "Guaranteeing outcomes", "Blaming the client"], "answerIndex": 0},
+]
 
 
 def now_iso() -> str:
@@ -177,6 +331,29 @@ def default_bank() -> Dict[str, Any]:
         "mandateAccepted": False,
     }
 
+def default_living_budget() -> Dict[str, Any]:
+    return {
+        "rentOrBond": 0,
+        "groceries": 0,
+        "electricityWater": 0,
+        "transport": 0,
+        "schoolFees": 0,
+        "insurance": 0,
+        "medical": 0,
+        "cellphoneInternet": 0,
+        "clothing": 0,
+        "maintenance": 0,
+        "otherLivingExpenses": 0,
+        "dependants": 0,
+        "notes": "",
+    }
+
+
+def living_expense_total(budget: Dict[str, Any] | None) -> float:
+    item = {**default_living_budget(), **(budget or {})}
+    keys = ["rentOrBond", "groceries", "electricityWater", "transport", "schoolFees", "insurance", "medical", "cellphoneInternet", "clothing", "maintenance", "otherLivingExpenses"]
+    return sum(money_to_float(item.get(key)) for key in keys)
+
 
 def demo_accounts() -> List[Dict[str, Any]]:
     return [
@@ -225,12 +402,24 @@ def evaluate_sales(client: Dict[str, Any], accounts: List[Dict[str, Any]]) -> Di
     score = int(money_to_float(score_raw, -1)) if score_found else None
     included = [a for a in accounts if a.get("included", True)]
     debt_review = bool(client.get("debtReviewListed")) or (score_found and score == 0)
+    selected_services = client.get("serviceTypes") if isinstance(client.get("serviceTypes"), list) else []
+    selected_removal_service = client.get("serviceType") == "Debt Review Removal" or "Debt Review Removal" in selected_services
     outstanding = sum(money_to_float(a.get("currentBalance")) for a in included)
     arrears = sum(money_to_float(a.get("arrears")) for a in included)
     original_instalment = sum(money_to_float(a.get("monthlyInstallment")) for a in included)
     reduced = sum(money_to_float(a.get("reducedAmount")) for a in included)
+    estimated_relief = max(0.0, original_instalment - reduced)
+    savings_percent = round((estimated_relief / original_instalment) * 100) if original_instalment > 0 else 0
+    spouse = client.get("spouse") if isinstance(client.get("spouse"), dict) else {}
+    household_income = money_to_float(client.get("nettSalary")) + (money_to_float(spouse.get("nettSalary")) if client.get("applicationType") == "Joint" else 0)
+    living_expenses = living_expense_total(client.get("budget") if isinstance(client.get("budget"), dict) else {})
+    available_after_living = household_income - living_expenses
+    available_after_original = available_after_living - original_instalment
+    available_after_reduced = available_after_living - reduced
     has_asset = any(a.get("isAsset") or any(k in str(a.get("creditorName", "")).lower() for k in ASSET_KEYWORDS) for a in included)
     has_furniture = any(a.get("isFurniture") or any(k in str(a.get("creditorName", "")).lower() for k in FURNITURE_KEYWORDS) for a in included)
+    no_active_balances = outstanding <= 0 and original_instalment <= 0 and arrears <= 0
+    no_balance_removal_lead = no_active_balances and (debt_review or selected_removal_service)
 
     service = "Debt Mediation"
     urgency = "Medium"
@@ -238,8 +427,18 @@ def evaluate_sales(client: Dict[str, Any], accounts: List[Dict[str, Any]]) -> Di
     reasons: List[str] = []
     next_steps: List[str] = []
     objection_handlers: List[str] = []
+    pain_points: List[str] = []
+    budget_benefits: List[str] = []
+    tonality_tips: List[str] = []
+    talk_track: List[str] = []
 
-    if debt_review:
+    if no_balance_removal_lead:
+        service = "Debt Review Removal"
+        urgency = "High"
+        headline = "Debt Review Removal: clear the flag and restore credit-worthiness"
+        reasons.append("No active balances or monthly instalments are showing, so the sale should not be positioned as debt reduction.")
+        reasons.append("Focus on verifying and removing the debt-review flag so the client can become credit-worthy again.")
+    elif debt_review:
         service = "Debt Review Removal"
         urgency = "High"
         headline = "Debt Review Removal lead"
@@ -270,38 +469,98 @@ def evaluate_sales(client: Dict[str, Any], accounts: List[Dict[str, Any]]) -> Di
     if has_furniture:
         reasons.append("Furniture accounts detected. Tag these clearly because clients often ask if household goods are at risk.")
     if original_instalment > 0:
-        reasons.append(f"Estimated monthly relief is R{max(0, original_instalment - reduced):,.2f} before final affordability checks.")
+        reasons.append(f"Estimated monthly relief is R{estimated_relief:,.2f} before final affordability checks.")
+
+    if household_income > 0 and living_expenses > 0:
+        living_ratio = round((living_expenses / household_income) * 100)
+        pain_points.append(f"Living expenses are using about {living_ratio}% of household nett income before debt repayments.")
+    if original_instalment > 0 and household_income > 0:
+        if available_after_original < 0:
+            pain_points.append(f"Before the proposed reduction, the client is short by R{abs(available_after_original):,.2f} after living expenses and normal instalments.")
+        else:
+            pain_points.append(f"Before the proposed reduction, only R{available_after_original:,.2f} remains after living expenses and normal instalments.")
+    if arrears > 0:
+        pain_points.append(f"Arrears of R{arrears:,.2f} show that the pressure is already visible, not only theoretical.")
+    if estimated_relief > 0:
+        budget_benefits.append(f"The proposed reduction can free up about R{estimated_relief:,.2f} per month, roughly {savings_percent}% less than current instalments.")
+        budget_benefits.append("That saving can be positioned as breathing room for groceries, transport, electricity and keeping the payment plan consistent.")
+    if available_after_reduced >= 0 and reduced > 0:
+        budget_benefits.append(f"After living expenses and the proposed payment, the budget still shows R{available_after_reduced:,.2f} available.")
+    elif reduced > 0:
+        budget_benefits.append("The current reduced proposal still does not fit the captured budget. Lower the reduced amounts before promising affordability.")
+
+    if no_balance_removal_lead:
+        pain_points.append("The pressure point is no longer monthly debt relief; it is the debt-review flag still blocking the client from being seen as credit-worthy.")
+        pain_points.append("With no balances showing, the client may feel 'I am finished paying', but the bureau/status flag can still stop approvals.")
+        budget_benefits.append("The main benefit is restoring borrowing power and credibility, not lowering an instalment.")
+        budget_benefits.append("Once the flag is correctly removed, the client may have a better chance of qualifying for future credit, vehicle finance, home finance, rental checks, cellphone contracts and business opportunities, subject to lender assessment.")
+        budget_benefits.append("The conversation should position the R7,000 removal fee as a clean-up and status-restoration service, not a payment-plan saving.")
+        talk_track.append("The good news is that your report is not showing active balances to restructure. That means our focus is not mediation today — it is getting the debt-review flag removed correctly.")
+        talk_track.append("When that flag remains, credit providers can still treat you as high risk even if you have paid your accounts. Removing it helps you start rebuilding your credit-worthiness.")
+        talk_track.append("The benefit is not only today's report; it is what becomes possible again afterwards — applying with a cleaner profile and rebuilding trust with lenders.")
+
+    tonality_tips = [
+        ("Use a positive, future-focused tone: 'You have done the hard part by clearing the balances; now we need to clean up the status so your profile can move forward.'" if no_balance_removal_lead else "Use a calm, protective tone: 'I can see why this has become stressful, let us work from the numbers.'"),
+        "Do not shame the client or sound excited about hardship; speak like you are helping them regain control.",
+        "Ask permission before giving advice: 'Can I show you what the budget is telling us?'",
+        "Anchor the sale on relief and stability, not fear. Avoid guaranteeing approvals, removals or legal outcomes.",
+    ]
+    talk_track.append(f"Based on your budget, your household income is R{household_income:,.2f} and your living expenses are R{living_expenses:,.2f}.")
+    if estimated_relief > 0:
+        talk_track.append(f"Your current instalments are about R{original_instalment:,.2f}. The proposed amount is R{reduced:,.2f}, which could free up around R{estimated_relief:,.2f} every month.")
+    if available_after_original < 0:
+        talk_track.append("Right now the numbers show a shortfall before we even look at emergencies. That is why a structured solution is important.")
+    if available_after_reduced >= 0 and reduced > 0:
+        talk_track.append(f"With the reduced amount, the budget becomes more manageable because there is still an estimated R{available_after_reduced:,.2f} left after living expenses and the proposal.")
 
     if service == "Debt Review Removal":
-        next_steps = [
-            "Confirm whether the client is still actively under debt review or only still listed at the bureau.",
-            "Request ID, proof of address, latest payslip, bank statement, and existing NCT/court documents if available.",
-            "Explain the R7,000 DRR fee and offer a 1-3 month payment arrangement.",
-            "If balances remain, present mediation as the second sale to restructure active debts.",
-        ]
-        objection_handlers = [
-            "I already paid my debt counsellor: explain that paid-up history and bureau flag status must still be verified.",
-            "I only want my name cleared: explain that removal is step one, but active balances can still affect affordability and score recovery.",
-        ]
+        if no_balance_removal_lead:
+            next_steps = [
+                "Verify that there are no remaining active balances that need mediation.",
+                "Confirm the debt-review flag/status and whether the route is 17.W, 17.3, clearance/bureau correction, court/NCT or previous-DC follow-up.",
+                "Request ID, 3 months bank statements, latest payslip, signed 17.W/17.3 and POA.",
+                "Send NuPay DebiCheck for the R7,000 removal fee split over 1-3 months if the client accepts.",
+                "Submit the removal pack and track bureau/status confirmation until the profile is updated.",
+            ]
+            objection_handlers = [
+                "I have no debt, why must I pay anything: explain that the service is not for balances; it is to remove the status barrier that can keep causing declined applications.",
+                "Will my score go up immediately: explain that removal can make the profile eligible to rebuild, but no score or approval can be guaranteed.",
+                "I already paid everyone: agree with the client, then explain that paid-up accounts and a removed debt-review flag are two different outcomes and both must be reflected correctly.",
+                "I only need a loan now: keep the tone honest — first remove the flag and rebuild credit-worthiness; do not promise a loan approval.",
+            ]
+        else:
+            next_steps = [
+                "Confirm whether the client is still actively under debt review or only still listed at the bureau.",
+                "Request ID, 3 months bank statements, latest payslip, signed 17.W/17.3 and POA.",
+                "Explain the R7,000 DRR fee and offer a 1-3 month payment arrangement.",
+                "If balances remain, present mediation as the second sale to restructure active debts.",
+            ]
+            objection_handlers = [
+                "I already paid my debt counsellor: explain that paid-up history and bureau flag status must still be verified.",
+                "I only want my name cleared: explain that removal is step one, but active balances can still affect affordability and score recovery.",
+                f"I cannot afford another fee: acknowledge it, then show the monthly split and compare it to the R{estimated_relief:,.2f} potential monthly relief where mediation also applies.",
+            ]
     elif service == "Debt Review Sales Coach":
         next_steps = [
             "Confirm income, living expenses, and whether the client is behind on home or vehicle payments.",
             "Position the conversation around protecting the asset and building a sustainable plan.",
-            "Prepare Form 16, consent, credit report, and COB request workflow if the client qualifies.",
+            "Request signed Form 16, ID, latest payslip and 3 months bank statements, then start the statutory workflow if the client qualifies.",
         ]
         objection_handlers = [
             "I do not want debt review: explain that assets at risk need urgent protection and eligibility must be assessed first.",
             "I can catch up next month: compare arrears and instalments against nett income before accepting that answer.",
+            "I am worried about the process: explain the admin sequence clearly — Form 16, 17.1/COB, assessment, 17.2, proposal and payment setup.",
         ]
     elif service == "Debt Mediation":
         next_steps = [
             "Confirm all income, debit orders, and living expenses before making a proposal.",
             "Use included accounts only and adjust reduced amounts to match affordability.",
-            "Send mediation mandate and upload-documents link before creditor communication.",
+            "Send POA/upload-documents link and confirm ID, 3 months bank statements and latest payslip before creditor communication.",
         ]
         objection_handlers = [
             "I can pay creditors myself: explain that one coordinated proposal reduces pressure and missed promises.",
             "I am not in arrears yet: explain mediation can prevent arrears when affordability is already under pressure.",
+            f"I need to think about it: bring the client back to the numbers and the potential R{estimated_relief:,.2f} monthly saving.",
         ]
 
     return {
@@ -311,12 +570,21 @@ def evaluate_sales(client: Dict[str, Any], accounts: List[Dict[str, Any]]) -> Di
         "reasons": reasons,
         "nextSteps": next_steps,
         "objectionHandlers": objection_handlers,
+        "painPoints": pain_points,
+        "budgetBenefits": budget_benefits,
+        "tonalityTips": tonality_tips,
+        "talkTrack": talk_track,
         "totals": {
             "outstanding": round(outstanding, 2),
             "arrears": round(arrears, 2),
             "originalInstalment": round(original_instalment, 2),
             "reducedInstalment": round(reduced, 2),
-            "estimatedRelief": round(max(0, original_instalment - reduced), 2),
+            "estimatedRelief": round(estimated_relief, 2),
+            "householdIncome": round(household_income, 2),
+            "livingExpenses": round(living_expenses, 2),
+            "availableAfterLivingExpenses": round(available_after_living, 2),
+            "availableAfterReducedPayment": round(available_after_reduced, 2),
+            "savingsPercent": savings_percent,
         },
         "flags": {
             "debtReviewListed": debt_review,
@@ -339,6 +607,7 @@ def make_client(tenant_id: str, full_name: str = "New Client", user_id: str = "s
             "fullName": full_name,
             "spouse": default_applicant(),
             "bank": default_bank(),
+            "budget": default_living_budget(),
             "creditScore": None,
             "scoreFound": False,
             "debtReviewListed": False,
@@ -398,10 +667,34 @@ def load_db() -> Dict[str, Any]:
         save_db(db)
         return db
     changed = False
-    for tenant in DEFAULT_TENANTS:
-        if tenant["id"] not in db.get("tenants", {}):
-            db.setdefault("tenants", {})[tenant["id"]] = {**tenant, "clients": [], "uploads": [], "createdAt": now_iso()}
+    for default_tenant in DEFAULT_TENANTS:
+        tenant_id = default_tenant["id"]
+        if tenant_id not in db.get("tenants", {}):
+            db.setdefault("tenants", {})[tenant_id] = {**default_tenant, "clients": [], "uploads": [], "commissionSnapshots": [], "knowledgeAssessments": [], "createdAt": now_iso()}
             changed = True
+        else:
+            tenant_record = db["tenants"][tenant_id]
+            # Keep tenant registration/profile fields current while preserving clients/uploads.
+            for key, value in default_tenant.items():
+                if key == "users":
+                    existing_users = {u.get("id"): u for u in tenant_record.get("users", []) if isinstance(u, dict)}
+                    merged_users = []
+                    for default_user in value:
+                        previous = existing_users.pop(default_user.get("id"), {})
+                        merged_users.append({**default_user, **{k: v for k, v in previous.items() if k not in {"id", "role"}}})
+                    # Preserve legacy users for older demo tenants, but keep Khusela exactly at 10 consultants, 4 admins and 2 managers.
+                    if tenant_id != "khusela-debt-management":
+                        for legacy_user in existing_users.values():
+                            if legacy_user.get("id"):
+                                merged_users.append(legacy_user)
+                    if tenant_record.get("users") != merged_users:
+                        tenant_record["users"] = merged_users
+                        changed = True
+                elif tenant_record.get(key) != value:
+                    tenant_record[key] = value
+                    changed = True
+            tenant_record.setdefault("commissionSnapshots", [])
+            tenant_record.setdefault("knowledgeAssessments", [])
     for tenant in db.get("tenants", {}).values():
         for client in tenant.get("clients", []):
             before = json.dumps(client, sort_keys=True, default=str)
@@ -479,7 +772,16 @@ def public_tenant_summary(db: Dict[str, Any]) -> List[Dict[str, Any]]:
             {
                 "id": tenant.get("id"),
                 "name": tenant.get("name"),
+                "tradingName": tenant.get("tradingName", tenant.get("name")),
+                "fullName": tenant.get("fullName", ""),
                 "ncr": tenant.get("ncr"),
+                "phone": tenant.get("phone", ""),
+                "fax": tenant.get("fax", ""),
+                "email": tenant.get("email", ""),
+                "finalRegistrationDate": tenant.get("finalRegistrationDate", ""),
+                "physicalAddress": tenant.get("physicalAddress", ""),
+                "postalAddress": tenant.get("postalAddress", ""),
+                "town": tenant.get("town", ""),
                 "userCount": len(tenant.get("users", [])),
                 "clientCount": len(tenant.get("clients", [])),
             }
@@ -488,15 +790,612 @@ def public_tenant_summary(db: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 
 
+
+def manager_commission_snapshot(tenant: Dict[str, Any], requested_by: str = "system") -> Dict[str, Any]:
+    metrics = consultant_dashboard_metrics(tenant)
+    snapshot = {
+        "id": new_id("commission"),
+        "createdAt": now_iso(),
+        "createdBy": requested_by,
+        "tenantId": tenant.get("id"),
+        "period": datetime.now(timezone.utc).strftime("%Y-%m"),
+        "summary": metrics.get("summary", {}),
+        "leaderboard": metrics.get("leaderboard", []),
+        "notes": "Stored for manager review and commission assessment. Figures are derived from tenant-isolated uploads, clients, documents and handover records.",
+    }
+    tenant.setdefault("commissionSnapshots", []).append(snapshot)
+    # Keep the most recent 120 snapshots to avoid uncontrolled local JSON growth.
+    tenant["commissionSnapshots"] = tenant.get("commissionSnapshots", [])[-120:]
+    tenant["latestCommissionSnapshot"] = snapshot
+    return snapshot
+
+
+def public_product_knowledge() -> Dict[str, Any]:
+    modules = deepcopy(PRODUCT_KNOWLEDGE_MODULES)
+    questions = []
+    for question in PRODUCT_KNOWLEDGE_QUESTIONS:
+        safe = {key: value for key, value in question.items() if key != "answerIndex"}
+        questions.append(safe)
+    return {"modules": modules, "questions": questions, "passMark": 80, "totalQuestions": len(questions)}
+
+
+def knowledge_leaderboard(tenant: Dict[str, Any]) -> List[Dict[str, Any]]:
+    users = tenant.get("users", [])
+    latest_by_user: Dict[str, Dict[str, Any]] = {}
+    for result in tenant.get("knowledgeAssessments", []):
+        uid = result.get("userId") or "unassigned"
+        if uid not in latest_by_user or result.get("submittedAt", "") > latest_by_user[uid].get("submittedAt", ""):
+            latest_by_user[uid] = result
+    rows: List[Dict[str, Any]] = []
+    for user in users:
+        if user.get("role") != "Consultant":
+            continue
+        result = latest_by_user.get(user.get("id", ""), {})
+        rows.append({
+            "userId": user.get("id"),
+            "name": user.get("name"),
+            "email": user.get("email", ""),
+            "scorePercent": result.get("scorePercent", 0),
+            "correct": result.get("correct", 0),
+            "total": result.get("total", len(PRODUCT_KNOWLEDGE_QUESTIONS)),
+            "rank": 0,
+            "level": result.get("level", "Not Assessed"),
+            "passed": result.get("passed", False),
+            "submittedAt": result.get("submittedAt", ""),
+            "attempts": sum(1 for r in tenant.get("knowledgeAssessments", []) if r.get("userId") == user.get("id")),
+        })
+    rows.sort(key=lambda r: (r.get("scorePercent", 0), r.get("correct", 0), r.get("submittedAt", "")), reverse=True)
+    for index, row in enumerate(rows, start=1):
+        row["rank"] = index
+    return rows
+
+
+def grade_product_assessment(tenant: Dict[str, Any], user_id: str, answers: Dict[str, Any]) -> Dict[str, Any]:
+    total = len(PRODUCT_KNOWLEDGE_QUESTIONS)
+    correct = 0
+    review: List[Dict[str, Any]] = []
+    answer_map = {str(k): v for k, v in (answers or {}).items()}
+    for question in PRODUCT_KNOWLEDGE_QUESTIONS:
+        qid = question["id"]
+        selected = answer_map.get(qid)
+        try:
+            selected_index = int(selected)
+        except Exception:
+            selected_index = -1
+        is_correct = selected_index == int(question["answerIndex"])
+        if is_correct:
+            correct += 1
+        review.append({
+            "id": qid,
+            "moduleId": question.get("moduleId"),
+            "service": question.get("service"),
+            "question": question.get("question"),
+            "selectedIndex": selected_index,
+            "correctIndex": question.get("answerIndex"),
+            "correct": is_correct,
+        })
+    score = round((correct / total) * 100, 1) if total else 0.0
+    if score >= 90:
+        level = "Excellent product knowledge"
+    elif score >= 80:
+        level = "Passed"
+    elif score >= 60:
+        level = "Needs coaching"
+    else:
+        level = "Retraining required"
+    user = next((u for u in tenant.get("users", []) if u.get("id") == user_id), {"id": user_id, "name": "Unknown User", "role": "Unknown", "email": ""})
+    result = {
+        "id": new_id("assessment"),
+        "tenantId": tenant.get("id"),
+        "userId": user_id,
+        "userName": user.get("name"),
+        "userRole": user.get("role"),
+        "submittedAt": now_iso(),
+        "correct": correct,
+        "total": total,
+        "scorePercent": score,
+        "passed": score >= 80,
+        "level": level,
+        "review": review,
+    }
+    tenant.setdefault("knowledgeAssessments", []).append(result)
+    tenant["knowledgeAssessments"] = tenant.get("knowledgeAssessments", [])[-500:]
+    return result
+
+
+def consultant_dashboard_metrics(tenant: Dict[str, Any]) -> Dict[str, Any]:
+    """Return consultant leaderboard metrics for the active tenant only.
+
+    Leads are counted from uploaded credit reports. DC value is the combined
+    reduced-payment proposal value plus any applicable DRR removal fees.
+    Documents received are counted from required document items marked Uploaded.
+    """
+    users = tenant.get("users", [])
+    metrics: Dict[str, Dict[str, Any]] = {}
+
+    def ensure_user(user_id: str, fallback_name: str = "Unassigned") -> Dict[str, Any]:
+        user = next((u for u in users if u.get("id") == user_id), None)
+        if not user:
+            user = {"id": user_id or "unassigned", "name": fallback_name, "role": "Unassigned", "email": ""}
+        uid = user.get("id") or "unassigned"
+        if uid not in metrics:
+            metrics[uid] = {
+                "userId": uid,
+                "name": user.get("name") or fallback_name,
+                "role": user.get("role", ""),
+                "email": user.get("email", ""),
+                "leadsGenerated": 0,
+                "uploadedReports": 0,
+                "activeClients": 0,
+                "clientsSubmitted": 0,
+                "reducedInstallments": 0.0,
+                "removalFees": 0.0,
+                "dcValue": 0.0,
+                "documentsReceived": 0,
+                "requiredDocuments": 0,
+                "documentCompletionRate": 0.0,
+                "lastActivityAt": "",
+            }
+        return metrics[uid]
+
+    for user in users:
+        if user.get("role") == "Consultant":
+            ensure_user(user.get("id", ""), user.get("name", "Consultant"))
+
+    for upload in tenant.get("uploads", []):
+        uid = upload.get("userId") or upload.get("uploadedBy") or "unassigned"
+        row = ensure_user(uid)
+        row["uploadedReports"] += 1
+        row["leadsGenerated"] += 1
+        at = upload.get("uploadedAt", "")
+        if at > row.get("lastActivityAt", ""):
+            row["lastActivityAt"] = at
+
+    for client in tenant.get("clients", []):
+        uid = client.get("assignedUserId") or client.get("createdBy") or client.get("adminHandover", {}).get("submittedBy") or "unassigned"
+        row = ensure_user(uid)
+        row["activeClients"] += 1
+        updated = client.get("updatedAt", "") or client.get("createdAt", "")
+        if updated > row.get("lastActivityAt", ""):
+            row["lastActivityAt"] = updated
+        if client.get("adminHandover", {}).get("status") == "Submitted" or client.get("status") == "Submitted to Admin":
+            row["clientsSubmitted"] += 1
+
+        coach = client.get("coach") or evaluate_sales(client, client.get("accounts", []))
+        reduced = money_to_float(coach.get("totals", {}).get("reducedInstalment"))
+        if not reduced:
+            reduced = sum(money_to_float(a.get("reducedAmount")) for a in client.get("accounts", []) if a.get("included", True))
+        row["reducedInstallments"] += reduced
+
+        services = client.get("serviceTypes") or client.get("adminWorkflow", {}).get("services") or admin_services_for(client, coach)
+        if "Debt Review Removal" in services or client.get("serviceType") == "Debt Review Removal":
+            row["removalFees"] += DRR_SERVICE_FEE
+
+        docs = client.get("documents", {}).get("items", []) if isinstance(client.get("documents"), dict) else []
+        row["documentsReceived"] += sum(1 for d in docs if str(d.get("status", "")).lower() == "uploaded")
+        row["requiredDocuments"] += len(docs)
+
+    leaderboard = []
+    for row in metrics.values():
+        row["reducedInstallments"] = round(row["reducedInstallments"], 2)
+        row["removalFees"] = round(row["removalFees"], 2)
+        row["dcValue"] = round(row["reducedInstallments"] + row["removalFees"], 2)
+        req = row.get("requiredDocuments") or 0
+        row["documentCompletionRate"] = round((row["documentsReceived"] / req) * 100, 1) if req else 0.0
+        # Weighted score keeps the ranking practical for daily consultant management.
+        row["performanceScore"] = round((row["leadsGenerated"] * 10) + (row["dcValue"] / 1000) + (row["documentsReceived"] * 4) + (row["clientsSubmitted"] * 8), 2)
+        leaderboard.append(row)
+
+    leaderboard.sort(key=lambda r: (r.get("performanceScore", 0), r.get("dcValue", 0), r.get("leadsGenerated", 0), r.get("documentsReceived", 0)), reverse=True)
+    for idx, row in enumerate(leaderboard, start=1):
+        row["rank"] = idx
+
+    summary = {
+        "tenantClients": len(tenant.get("clients", [])),
+        "uploadedReports": sum(r["uploadedReports"] for r in leaderboard),
+        "leadsGenerated": sum(r["leadsGenerated"] for r in leaderboard),
+        "dcValue": round(sum(r["dcValue"] for r in leaderboard), 2),
+        "reducedInstallments": round(sum(r["reducedInstallments"] for r in leaderboard), 2),
+        "removalFees": round(sum(r["removalFees"] for r in leaderboard), 2),
+        "documentsReceived": sum(r["documentsReceived"] for r in leaderboard),
+        "clientsSubmitted": sum(r["clientsSubmitted"] for r in leaderboard),
+        "consultants": len([r for r in leaderboard if r.get("role") == "Consultant"]),
+    }
+    return {"summary": summary, "leaderboard": leaderboard}
+
+
 def required_documents_for(service: str) -> List[str]:
-    common = ["POPIA consent", "ID copy", "Proof of address", "Latest payslip", "3 months bank statements", "Credit report"]
-    if service == "Debt Review Removal":
-        return common + ["DR removal mandate", "NCT/court order if available", "Paid-up letters where applicable", "Clearance or termination evidence", "NuPay mandate"]
+    # Client-upload list only. Admin-generated statutory output documents
+    # such as Form 17.1, Form 17.2, proposals and court/NCT packs are tracked
+    # separately in the admin workflow and are not requested from the client.
     if service == "Debt Review Sales Coach":
-        return common + ["Form 16", "17.1 notice", "COB request authority", "Budget and affordability sheet", "NuPay mandate"]
+        return [
+            "Signed Form 16",
+            "ID copy",
+            "Latest payslip",
+            "3 months bank statements",
+        ]
+    if service == "Debt Review Removal":
+        return [
+            "ID copy",
+            "3 months bank statements",
+            "Signed Form 17.W / 17.3",
+            "Latest payslip",
+            "Power of Attorney (POA)",
+        ]
     if service == "Debt Mediation":
-        return common + ["Mediation mandate", "Creditor proposal authority", "Settlement/arrangement mandate", "NuPay mandate"]
-    return common + ["Service mandate", "NuPay mandate"]
+        return [
+            "ID copy",
+            "3 months bank statements",
+            "Latest payslip",
+            "Power of Attorney (POA)",
+        ]
+    return ["ID copy", "Latest payslip", "3 months bank statements"]
+
+
+def admin_services_for(client: Dict[str, Any], coach: Dict[str, Any]) -> List[str]:
+    primary = client.get("serviceType") or coach.get("service") or "Needs Manual Review"
+    services: List[str] = []
+    outstanding = money_to_float(coach.get("totals", {}).get("outstanding"))
+    double_sale = bool(coach.get("flags", {}).get("doubleSaleCandidate")) or (primary == "Debt Review Removal" and outstanding > 0)
+    if primary == "Debt Review Removal":
+        services.append("Debt Review Removal")
+        if double_sale:
+            services.append("Debt Mediation")
+    elif primary == "Debt Review Sales Coach":
+        services.append("Debt Review Sales Coach")
+    elif primary == "Debt Mediation":
+        services.append("Debt Mediation")
+    else:
+        services.append("Needs Manual Review")
+    seen = set()
+    unique = []
+    for service in services:
+        if service not in seen:
+            unique.append(service)
+            seen.add(service)
+    return unique
+
+
+
+def clamp_drr_months(value: Any) -> int:
+    months = int(money_to_float(value, 3))
+    return max(1, min(3, months))
+
+
+def nupay_mandate_breakdown(client: Dict[str, Any], coach: Dict[str, Any], drr_months: Any = None) -> Dict[str, Any]:
+    services = client.get("serviceTypes") or client.get("adminWorkflow", {}).get("services") or admin_services_for(client, coach)
+    includes_drr_fee = "Debt Review Removal" in services or client.get("serviceType") == "Debt Review Removal" or coach.get("service") == "Debt Review Removal"
+    includes_mediation = "Debt Mediation" in services or client.get("serviceType") == "Debt Mediation" or coach.get("service") == "Debt Mediation" or money_to_float(coach.get("totals", {}).get("reducedInstalment")) > 0
+    months = clamp_drr_months(drr_months or client.get("nupayMandate", {}).get("drrMonths") or 3) if includes_drr_fee else 0
+    reduced_payment = round(money_to_float(coach.get("totals", {}).get("reducedInstalment")), 2) if includes_mediation else 0.0
+    drr_total = DRR_SERVICE_FEE if includes_drr_fee else 0.0
+    drr_monthly = round(drr_total / months, 2) if includes_drr_fee and months else 0.0
+    total = round(reduced_payment + drr_monthly, 2)
+    if includes_drr_fee and reduced_payment > 0:
+        collection_mode = "DebiCheck: DRR service fee plus mediation reduced payment"
+    elif includes_drr_fee:
+        collection_mode = "DebiCheck: DRR service fee only"
+    elif reduced_payment > 0:
+        collection_mode = "DebiCheck: mediation reduced payment only"
+    else:
+        collection_mode = "No NuPay DebiCheck collection configured"
+    return {
+        "amount": total,
+        "drrMonths": months,
+        "includesDrrFee": includes_drr_fee,
+        "includesMediationPayment": reduced_payment > 0,
+        "components": {
+            "reducedPayment": reduced_payment,
+            "drrServiceFeeTotal": drr_total,
+            "drrServiceFeeMonthly": drr_monthly,
+            "totalMonthlyCollection": total,
+            "ongoingMonthlyCollection": reduced_payment,
+            "drrFeeMonthsRemaining": months,
+            "collectionMode": collection_mode,
+            "product": "NuPay DebiCheck",
+            "reducedPaymentLabel": "Debt Mediation / reduced creditor payment",
+            "drrFeeLabel": "Debt Review Removal service fee",
+        },
+    }
+
+def default_nupay_record(mandate_type: str) -> Dict[str, Any]:
+    return {
+        "status": "Not Sent",
+        "mandateId": "",
+        "link": "",
+        "amount": 0.0,
+        "debitDay": "25",
+        "startDate": "",
+        "mandateType": mandate_type,
+        "drrMonths": 3 if mandate_type == "removal" else 0,
+        "includesDrrFee": mandate_type == "removal",
+        "components": {
+            "reducedPayment": 0.0,
+            "drrServiceFeeTotal": 0.0,
+            "drrServiceFeeMonthly": 0.0,
+            "totalMonthlyCollection": 0.0,
+            "ongoingMonthlyCollection": 0.0,
+            "drrFeeMonthsRemaining": 0,
+            "collectionMode": "Not applicable",
+            "product": "NuPay DebiCheck",
+            "mandateKind": mandate_type,
+        },
+        "sentAt": "",
+        "cancelledAt": "",
+        "acceptedAt": "",
+        "history": [],
+    }
+
+
+def split_nupay_mandates(client: Dict[str, Any], coach: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    services = client.get("serviceTypes") or client.get("adminWorkflow", {}).get("services") or admin_services_for(client, coach)
+    existing = client.get("nupayMandates") if isinstance(client.get("nupayMandates"), dict) else {}
+    legacy = client.get("nupayMandate") if isinstance(client.get("nupayMandate"), dict) else {}
+    bank_debit_day = str(client.get("bank", {}).get("debitDay") or "25")
+
+    has_removal = "Debt Review Removal" in services or client.get("serviceType") == "Debt Review Removal" or coach.get("service") == "Debt Review Removal"
+    has_mediation = "Debt Mediation" in services or client.get("serviceType") == "Debt Mediation" or coach.get("service") == "Debt Mediation"
+    reduced_payment = round(money_to_float(coach.get("totals", {}).get("reducedInstalment")), 2) if has_mediation else 0.0
+
+    removal_existing = existing.get("removal") if isinstance(existing.get("removal"), dict) else {}
+    mediation_existing = existing.get("mediation") if isinstance(existing.get("mediation"), dict) else {}
+    drr_months = clamp_drr_months(removal_existing.get("drrMonths") or legacy.get("drrMonths") or 3) if has_removal else 0
+    removal_monthly = round(DRR_SERVICE_FEE / drr_months, 2) if has_removal and drr_months else 0.0
+
+    removal = {**default_nupay_record("removal"), **removal_existing}
+    removal.update({
+        "amount": money_to_float(removal_existing.get("amount"), removal_monthly) if removal_existing.get("status") not in (None, "", "Not Sent") else removal_monthly,
+        "debitDay": str(removal_existing.get("debitDay") or bank_debit_day),
+        "startDate": removal_existing.get("startDate", ""),
+        "drrMonths": drr_months,
+        "includesDrrFee": has_removal,
+        "mandateType": "removal",
+        "components": {
+            "reducedPayment": 0.0,
+            "drrServiceFeeTotal": DRR_SERVICE_FEE if has_removal else 0.0,
+            "drrServiceFeeMonthly": removal_monthly,
+            "totalMonthlyCollection": removal_monthly,
+            "ongoingMonthlyCollection": 0.0,
+            "drrFeeMonthsRemaining": drr_months,
+            "collectionMode": "Separate DebiCheck: Debt Review Removal service fee" if has_removal else "Not applicable",
+            "product": "NuPay DebiCheck",
+            "drrFeeLabel": "Debt Review Removal service fee",
+            "startDate": removal_existing.get("startDate", ""),
+            "mandateKind": "removal",
+        },
+        "history": removal_existing.get("history", []),
+    })
+
+    mediation = {**default_nupay_record("mediation"), **mediation_existing}
+    mediation.update({
+        "amount": money_to_float(mediation_existing.get("amount"), reduced_payment) if mediation_existing.get("status") not in (None, "", "Not Sent") else reduced_payment,
+        "debitDay": str(mediation_existing.get("debitDay") or bank_debit_day),
+        "startDate": mediation_existing.get("startDate", ""),
+        "drrMonths": 0,
+        "includesDrrFee": False,
+        "mandateType": "mediation",
+        "components": {
+            "reducedPayment": reduced_payment,
+            "drrServiceFeeTotal": 0.0,
+            "drrServiceFeeMonthly": 0.0,
+            "totalMonthlyCollection": reduced_payment,
+            "ongoingMonthlyCollection": reduced_payment,
+            "drrFeeMonthsRemaining": 0,
+            "collectionMode": "Separate DebiCheck: Debt Mediation reduced payment" if reduced_payment > 0 else "Not applicable",
+            "product": "NuPay DebiCheck",
+            "reducedPaymentLabel": "Debt Mediation / reduced creditor payment",
+            "startDate": mediation_existing.get("startDate", ""),
+            "mandateKind": "mediation",
+        },
+        "history": mediation_existing.get("history", []),
+    })
+    return {"removal": removal, "mediation": mediation}
+
+
+def combined_nupay_summary(client: Dict[str, Any]) -> Dict[str, Any]:
+    mandates = client.get("nupayMandates") if isinstance(client.get("nupayMandates"), dict) else {}
+    removal = mandates.get("removal", {}) if isinstance(mandates.get("removal"), dict) else {}
+    mediation = mandates.get("mediation", {}) if isinstance(mandates.get("mediation"), dict) else {}
+    active = [m for m in (removal, mediation) if m.get("status") and m.get("status") != "Not Sent"]
+    if not active:
+        status = "Not Sent"
+    elif any(m.get("status") == "Pending Acceptance" for m in active):
+        status = "Pending Acceptance"
+    elif all(m.get("status") == "Accepted" for m in active):
+        status = "Accepted"
+    elif any(m.get("status") == "Cancelled" for m in active):
+        status = "Cancelled"
+    else:
+        status = active[-1].get("status", "Not Sent")
+    amount = round(sum(money_to_float(m.get("amount")) for m in active if m.get("status") != "Cancelled"), 2)
+    return {
+        "status": status,
+        "mandateId": " / ".join([m.get("mandateId", "") for m in active if m.get("mandateId")]),
+        "link": "",
+        "amount": amount,
+        "debitDay": client.get("bank", {}).get("debitDay", "25"),
+        "drrMonths": removal.get("drrMonths", 0),
+        "includesDrrFee": bool(removal.get("includesDrrFee")),
+        "components": {"totalMonthlyCollection": amount, "reducedPayment": money_to_float(mediation.get("amount")), "drrServiceFeeMonthly": money_to_float(removal.get("amount"))},
+        "history": (removal.get("history") or []) + (mediation.get("history") or []),
+    }
+
+
+def admin_task_templates(services: List[str]) -> List[Dict[str, Any]]:
+    """Service-aware admin workflow in the actual operational order.
+
+    Debt Review tasks are intentionally sequenced from consultant handover to final
+    Form 19/bureau closure. The legal/statutory section only starts after signed
+    Form 16 is confirmed. Client-upload documents remain limited to the packs
+    requested by the business owner; statutory generated outputs are tracked here.
+    """
+    rows: List[Dict[str, Any]] = []
+
+    def slug(value: str) -> str:
+        return re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
+
+    def add_step(
+        service: str,
+        sequence: int,
+        phase: str,
+        label: str,
+        *,
+        due_business_days: int | None = None,
+        due_from: str = "",
+        regulation: str = "",
+        evidence: str = "",
+        minimum: bool = False,
+        owner: str = "Admin",
+        gate: str = "",
+        outcome: str = "",
+        notes: str = "",
+    ) -> None:
+        rows.append({
+            "id": f"{slug(service)}-step-{sequence:02d}-{slug(label)[:42]}",
+            "service": service,
+            "sequence": sequence,
+            "stepCode": f"{slug(service).upper()[:3]}-{sequence:02d}",
+            "phase": phase,
+            "label": label,
+            "status": "Not Started",
+            "notes": notes,
+            "completedAt": "",
+            "updatedAt": "",
+            "ownerRole": owner,
+            "dueBusinessDays": due_business_days,
+            "dueFrom": due_from,
+            "regulationRef": regulation,
+            "evidenceRequired": evidence,
+            "ncaMinimum": minimum,
+            "gate": gate,
+            "outcome": outcome,
+        })
+
+    for service in services:
+        if service == "Debt Review Sales Coach":
+            dr = "NCA s86 / Regulation 24 operational control"
+            add_step(service, 1, "Consultant Handover", "Receive consultant handover and lock selected service as Debt Review", evidence="Consultant handover snapshot with client info, accounts, reduced amount and notes", outcome="Admin owns the file")
+            add_step(service, 2, "Intake Verification", "Verify client profile, ID number, contact details, marital/joint status and spouse details", evidence="Updated client profile", minimum=True)
+            add_step(service, 3, "Required Client Documents", "Confirm only required client docs: signed Form 16, ID copy, latest payslip and 3 months bank statements", evidence="Signed Form 16, ID copy, latest payslip, 3 months bank statements", minimum=True, gate="Do not start statutory notices until complete")
+            add_step(service, 4, "Credit Agreement Review", "Verify all included credit agreements from credit report and mark excluded, closed, legal or prescribed-candidate accounts", evidence="Included-creditor schedule", minimum=True)
+            add_step(service, 5, "Budget / Affordability", "Verify nett income, living-expense budget, dependants, bank details and available amount before proposal", evidence="Captured living budget and affordability summary", minimum=True)
+            add_step(service, 6, "Form 16 Accepted", "Record Form 16 received/signed date and open the legal debt-review application timer", due_from="Signed Form 16", regulation="NCA s86 application control", evidence="Form 16 date and proof of receipt", minimum=True, gate="This is where the legal debt-review process starts")
+            add_step(service, 7, "Form 17.1", "Send Form 17.1/application notice to every included credit provider and registered credit bureau", due_business_days=5, due_from="Form 16/application received", regulation=dr, evidence="17.1 copies and proof of dispatch per creditor/bureau", minimum=True)
+            add_step(service, 8, "COB Requests", "Request Certificates of Balance from every included creditor and create follow-up dates", due_business_days=5, due_from="17.1 dispatch", regulation=dr, evidence="COB request log and creditor communication proof", minimum=True)
+            add_step(service, 9, "COB Capture", "Capture COB balances, arrears, instalments, interest/rates and account status per creditor", evidence="COB copy per creditor", minimum=True)
+            add_step(service, 10, "COB Reconciliation", "Compare COB values against parsed credit-report figures and resolve discrepancies", evidence="Reconciled creditor schedule with notes", minimum=True)
+            add_step(service, 11, "Assessment", "Complete over-indebtedness assessment using income, living budget, bank statements, payslip and COBs", due_business_days=30, due_from="Debt-review application date", regulation="NCA s86(6) assessment control", evidence="Assessment worksheet", minimum=True)
+            add_step(service, 12, "Assessment", "Check reckless-credit/legal-action indicators and flag accounts requiring legal/compliance review", evidence="Reckless/legal risk notes", minimum=True)
+            add_step(service, 13, "Form 17.2 Decision", "Issue Form 17.2 outcome: rejected/not over-indebted or accepted/over-indebted/restructuring", due_business_days=30, due_from="Debt-review application date", regulation="NCA s86 / Regulation 24 decision notification", evidence="Form 17.2 and proof of dispatch", minimum=True, gate="If rejected, stop Debt Review workflow and close or move to mediation")
+            add_step(service, 14, "Proposal", "Prepare restructuring proposal using available amount and included creditor schedule", evidence="Proposal calculation and creditor schedule", minimum=True)
+            add_step(service, 15, "Creditor Negotiation", "Send proposal to every included creditor and track accepted, rejected, counter-offer or no response", evidence="Proposal dispatch proof and response register", minimum=True)
+            add_step(service, 16, "Legal Pack", "Prepare consent order, NCT or magistrates court pack based on responses and case route", due_business_days=60, due_from="Debt-review application date", regulation="NCA s86(8), s87 and s86(10) risk control", evidence="Legal pack, case/reference number or submission proof", minimum=True)
+            add_step(service, 17, "PDA Setup", "Capture PDA name, reference, proposed distribution amount, debit day and first payment date", evidence="PDA reference/payment schedule", minimum=True, owner="Admin/PDA")
+            add_step(service, 18, "Active Debt Review", "Move case into active monitoring only after proposal/order/payment setup is confirmed", evidence="Active status note and first-payment plan", owner="Admin/PDA")
+            add_step(service, 19, "Aftercare", "Monitor monthly PDA payments, missed payments, disputes, balance updates and client changes", evidence="Monthly aftercare/payment notes", owner="Admin/PDA")
+            add_step(service, 20, "Variation", "If affordability changes, capture new budget/payslip/bank statements and run variation/re-proposal path", evidence="Variation pack or no-change note", owner="Admin/PDA")
+            add_step(service, 21, "Paid-Up Tracking", "Collect paid-up letters/settlement confirmations and update included accounts", evidence="Paid-up letters and settlement confirmations", owner="Admin/PDA")
+            add_step(service, 22, "Form 19 Clearance", "Issue Form 19 only when clearance requirements are met and all eligible obligations are satisfied", regulation="NCA s71 / NCR Form 19", evidence="Form 19, paid-up proof and debt counsellor approval", minimum=True, owner="Admin/PDA", gate="This is the successful legal end of Debt Review")
+            add_step(service, 23, "Bureau Closure", "Send clearance/update to bureaus/NCR records and verify debt-review flag removal/update", evidence="Bureau update proof and final credit-report/status check", minimum=True, owner="Admin/PDA")
+            add_step(service, 24, "Closed", "Notify client, lock audit trail and close the admin file", evidence="Client closure notice and final audit note", owner="Admin/PDA", outcome="Debt Review file completed")
+        elif service == "Debt Review Removal":
+            add_step(service, 1, "Removal Intake", "Receive consultant handover and lock selected service as Debt Review Removal", evidence="Consultant handover snapshot")
+            add_step(service, 2, "Required Client Documents", "Confirm only required client docs: ID copy, 3 months bank statements, signed Form 17.W/17.3, latest payslip and POA", evidence="ID, 3 months bank statements, signed 17.W/17.3, latest payslip, POA", minimum=True)
+            add_step(service, 3, "Status Verification", "Verify actual debt-review status from credit report/NCR/bureau/previous debt counsellor information", evidence="Debt-review status evidence", minimum=True)
+            add_step(service, 4, "Route Decision", "Classify route: pre-17.2, post-17.2, court/NCT order, paid-up/clearance, incorrect bureau flag or legal review", evidence="Removal route decision note", minimum=True, gate="Do not promise removal until the legal route is known")
+            add_step(service, 5, "Fee / Mandate", "Confirm R7,000 DRR service fee split and NuPay mandate collection status", evidence="Accepted NuPay mandate / fee record", minimum=True)
+            add_step(service, 6, "Removal Pack", "Prepare removal/upliftment pack according to the verified route", evidence="Removal pack and supporting documents", minimum=True)
+            add_step(service, 7, "Submission", "Submit bureau/NCR/court/NCT/previous-DC update action and store proof", evidence="Submission proof", minimum=True)
+            add_step(service, 8, "Confirmation", "Track confirmation and verify credit-report/bureau update", evidence="Confirmation letter/status update/final report", minimum=True)
+            add_step(service, 9, "Post Removal", "If balances remain, continue only the Debt Mediation workflow for those accounts", evidence="Remaining-balance and mediation note")
+            add_step(service, 10, "Closed", "Notify client and close the DRR admin file", evidence="Client closure notice")
+        elif service == "Debt Mediation":
+            add_step(service, 1, "Mediation Intake", "Receive consultant handover and lock selected service as Debt Mediation", evidence="Consultant handover snapshot")
+            add_step(service, 2, "Required Client Documents", "Confirm only required client docs: ID copy, 3 months bank statements, latest payslip and POA", evidence="ID, 3 months bank statements, latest payslip, POA", minimum=True)
+            add_step(service, 3, "Authority / Limits", "Confirm client authority and make clear that mediation is not statutory Debt Review protection", evidence="POA/authority and disclosure note", minimum=True)
+            add_step(service, 4, "Budget / Affordability", "Verify income, living budget, available amount and bank details", evidence="Captured affordability summary", minimum=True)
+            add_step(service, 5, "Creditor Schedule", "Confirm included creditors and remove excluded, closed or non-negotiated accounts", evidence="Mediation creditor schedule", minimum=True)
+            add_step(service, 6, "Proposal", "Prepare reduced-payment proposal per creditor using balance, arrears, original instalment and reduced amount", evidence="Proposal pack", minimum=True)
+            add_step(service, 7, "Creditor Dispatch", "Send proposal to every included creditor and store proof", evidence="Email/proof of dispatch", minimum=True)
+            add_step(service, 8, "Negotiation", "Track acceptance, rejection, counter-offer and escalation per creditor", evidence="Creditor response register", minimum=True)
+            add_step(service, 9, "NuPay / Collection", "Send or confirm NuPay mandate for the ongoing reduced payment only", evidence="Accepted mandate and payment schedule", minimum=True, owner="Admin/PDA")
+            add_step(service, 10, "Monitoring", "Monitor first payment, creditor responses and client/creditor status notes", evidence="Payment and status notes", owner="Admin/PDA")
+            add_step(service, 11, "Closed / Active", "Move to active monitoring or close when arrangement is completed/cancelled", evidence="Closure or active-monitoring note", owner="Admin/PDA")
+        else:
+            add_step(service, 1, "Manual Review", "Review parser output and select the correct service route before sending statutory documents or sales promises", evidence="Manual-review note", minimum=True)
+            add_step(service, 2, "Manual Review", "Confirm required documents and compliance risk before admin processing", evidence="Admin decision note", minimum=True)
+    return rows
+
+def merge_admin_workflow(client: Dict[str, Any], coach: Dict[str, Any]) -> Dict[str, Any]:
+    services = admin_services_for(client, coach)
+    existing = client.get("adminWorkflow") or {}
+    generated_tasks = admin_task_templates(services)
+    existing_tasks = {task.get("id"): task for task in existing.get("tasks", []) if isinstance(task, dict)}
+    tasks = []
+    for task in generated_tasks:
+        previous = existing_tasks.get(task["id"], {})
+        merged = {**task, **previous}
+        tasks.append(merged)
+
+    existing_creditors = {item.get("id"): item for item in existing.get("creditorActions", []) if isinstance(item, dict)}
+    preferred_service = "Debt Mediation" if "Debt Mediation" in services else services[0]
+    creditor_actions = []
+    for account in client.get("accounts", []):
+        if not account.get("included", True):
+            continue
+        action_id = account.get("id") or hashlib.sha1(f"{account.get('creditorName','')}:{account.get('accountNumber','')}".encode()).hexdigest()[:10]
+        base = {
+            "id": action_id,
+            "service": preferred_service,
+            "creditorName": account.get("creditorName", "Unknown Creditor"),
+            "accountNumber": account.get("accountNumber", ""),
+            "status": "Not Contacted",
+            "currentBalance": money_to_float(account.get("currentBalance")),
+            "originalInstallment": money_to_float(account.get("monthlyInstallment")),
+            "proposedAmount": money_to_float(account.get("reducedAmount")),
+            "response": "",
+            "notes": "",
+            "updatedAt": "",
+        }
+        creditor_actions.append({**base, **existing_creditors.get(action_id, {})})
+
+    existing_fees = {item.get("id"): item for item in existing.get("feeItems", []) if isinstance(item, dict)}
+    fee_items = []
+    if "Debt Review Removal" in services:
+        fee_items.append({
+            "id": "drr-service-fee",
+            "label": "Debt Review Removal service fee",
+            "service": "Debt Review Removal",
+            "amount": 7000,
+            "status": "Not Invoiced",
+            "dueDate": "",
+            "paidAt": "",
+            "notes": "Can be split over 1 to 3 months.",
+        })
+    reduced = money_to_float(coach.get("totals", {}).get("reducedInstalment"))
+    if reduced > 0:
+        fee_items.append({
+            "id": "reduced-payment-proposal",
+            "label": "Reduced payment / NuPay proposal",
+            "service": preferred_service,
+            "amount": reduced,
+            "status": client.get("nupayMandate", {}).get("status", "Not Sent"),
+            "dueDate": "",
+            "paidAt": "",
+            "notes": "Must match affordability and mandate.",
+        })
+    fee_items = [{**item, **existing_fees.get(item["id"], {})} for item in fee_items]
+
+    return {
+        "services": services,
+        "activeService": existing.get("activeService") if existing.get("activeService") in services else services[0],
+        "overallStatus": existing.get("overallStatus", "Handover Received"),
+        "tasks": tasks,
+        "creditorActions": creditor_actions,
+        "feeItems": fee_items,
+        "lastUpdatedAt": existing.get("lastUpdatedAt", ""),
+    }
 
 
 def default_workflow_state(client: Dict[str, Any]) -> Dict[str, Any]:
@@ -515,12 +1414,7 @@ def default_workflow_state(client: Dict[str, Any]) -> Dict[str, Any]:
             "source": existing.get("source") or "",
             "notes": existing.get("notes") or "",
         })
-    # Keep previously uploaded/manual documents even if the service route changes.
-    for name, existing in existing_docs.items():
-        if name not in required:
-            extra = deepcopy(existing)
-            extra.setdefault("status", "Uploaded")
-            doc_items.append(extra)
+    # Do not keep old/non-required document rows in the required-document checklist.
     documents = {
         "required": required,
         "items": doc_items,
@@ -534,15 +1428,28 @@ def default_workflow_state(client: Dict[str, Any]) -> Dict[str, Any]:
         "sentAt": client.get("signature", {}).get("sentAt", ""),
         "signedAt": client.get("signature", {}).get("signedAt", ""),
     }
+    existing_mandate = client.get("nupayMandate", {}) if isinstance(client.get("nupayMandate"), dict) else {}
+    mandate_breakdown = nupay_mandate_breakdown(client, coach, existing_mandate.get("drrMonths") or 3)
+    stored_amount = money_to_float(existing_mandate.get("amount"), 0)
+    # If an older saved mandate only had the reduced payment amount, upgrade it to include the DRR fee monthly portion.
+    amount = stored_amount if stored_amount > 0 else mandate_breakdown["amount"]
+    if mandate_breakdown["includesDrrFee"] and stored_amount <= mandate_breakdown["components"]["reducedPayment"] + 0.01:
+        amount = mandate_breakdown["amount"]
+    components = existing_mandate.get("components") if isinstance(existing_mandate.get("components"), dict) else mandate_breakdown["components"]
+    if mandate_breakdown["includesDrrFee"]:
+        components = mandate_breakdown["components"]
     nupay = {
-        "status": client.get("nupayMandate", {}).get("status", "Not Sent"),
-        "mandateId": client.get("nupayMandate", {}).get("mandateId", ""),
-        "link": client.get("nupayMandate", {}).get("link", ""),
-        "amount": client.get("nupayMandate", {}).get("amount", coach.get("totals", {}).get("reducedInstalment", 0)),
-        "debitDay": client.get("nupayMandate", {}).get("debitDay", client.get("bank", {}).get("debitDay", "25")),
-        "sentAt": client.get("nupayMandate", {}).get("sentAt", ""),
-        "cancelledAt": client.get("nupayMandate", {}).get("cancelledAt", ""),
-        "history": client.get("nupayMandate", {}).get("history", []),
+        "status": existing_mandate.get("status", "Not Sent"),
+        "mandateId": existing_mandate.get("mandateId", ""),
+        "link": existing_mandate.get("link", ""),
+        "amount": amount,
+        "debitDay": existing_mandate.get("debitDay", client.get("bank", {}).get("debitDay", "25")),
+        "drrMonths": mandate_breakdown["drrMonths"],
+        "includesDrrFee": mandate_breakdown["includesDrrFee"],
+        "components": components,
+        "sentAt": existing_mandate.get("sentAt", ""),
+        "cancelledAt": existing_mandate.get("cancelledAt", ""),
+        "history": existing_mandate.get("history", []),
     }
     admin = {
         "status": client.get("adminHandover", {}).get("status", "Not Submitted"),
@@ -559,11 +1466,19 @@ def default_workflow_state(client: Dict[str, Any]) -> Dict[str, Any]:
         "status": client.get("pdaInfo", {}).get("status", "Not Submitted"),
         "notes": client.get("pdaInfo", {}).get("notes", ""),
     }
-    return {"documents": documents, "signature": signature, "nupayMandate": nupay, "adminHandover": admin, "pdaInfo": pda}
+    nupay_mandates = split_nupay_mandates({**client, "nupayMandate": nupay}, coach)
+    temp_client = {**client, "documents": documents, "signature": signature, "nupayMandate": nupay, "nupayMandates": nupay_mandates, "adminHandover": admin, "pdaInfo": pda}
+    temp_client["nupayMandate"] = combined_nupay_summary(temp_client) if any((m.get("status") and m.get("status") != "Not Sent") for m in nupay_mandates.values()) else nupay
+    admin_workflow = merge_admin_workflow(temp_client, coach)
+    return {"documents": documents, "signature": signature, "nupayMandate": temp_client["nupayMandate"], "nupayMandates": nupay_mandates, "adminHandover": admin, "pdaInfo": pda, "adminWorkflow": admin_workflow, "serviceTypes": admin_workflow.get("services", [service])}
 
 
 def ensure_client_workflow(client: Dict[str, Any]) -> Dict[str, Any]:
     client.setdefault("bank", default_bank())
+    client.setdefault("budget", default_living_budget())
+    if isinstance(client.get("budget"), dict):
+        for key, value in default_living_budget().items():
+            client["budget"].setdefault(key, value)
     client.setdefault("accounts", [])
     client["coach"] = evaluate_sales(client, client.get("accounts", []))
     client["serviceType"] = client["coach"]["service"]
@@ -592,6 +1507,10 @@ def normalize_client_payload(payload: Dict[str, Any], tenant_id: str, existing: 
         for key, value in default_applicant().items():
             base["spouse"].setdefault(key, value)
     base.setdefault("bank", default_bank())
+    base.setdefault("budget", default_living_budget())
+    if isinstance(base.get("budget"), dict):
+        for key, value in default_living_budget().items():
+            base["budget"].setdefault(key, value)
     base.setdefault("accounts", [])
     ensure_client_workflow(base)
     return base
@@ -851,6 +1770,96 @@ def extract_names_from_lines(text: str) -> Dict[str, str]:
     return result
 
 
+
+def extract_xds_basic_details(text: str) -> Dict[str, Any]:
+    """Extract XDS personal details from the Personal Details Summary block.
+
+    XDS PDF text is column-based and often interleaves the left/right columns.
+    This parser uses line anchors instead of wide greedy regex so values like
+    Gender/Marital Status/Employer do not swallow the whole report.
+    """
+    lines = [clean_spaces(line.replace("\xa0", " ")) for line in (text or "").splitlines() if clean_spaces(line)]
+    flat = clean_spaces((text or "").replace("\xa0", " "))
+
+    def line_value(label: str, stop_labels: List[str] | None = None) -> str:
+        stop_labels = stop_labels or []
+        for line in lines:
+            # XDS labels are at the start of the extracted row. Avoid matching labels
+            # mentioned in descriptions, for example "Name, Gender, Marital Status".
+            if not re.match(rf"^{re.escape(label)}\b", line, re.I):
+                continue
+            value = re.sub(rf"^{re.escape(label)}\s*[:\-]?\s*", "", line, flags=re.I).strip()
+            for stop in stop_labels:
+                value = re.split(rf"{re.escape(stop)}", value, flags=re.I)[0].strip()
+            return clean_spaces(value)
+        return ""
+
+    id_number = regex_first([r"\bID\s*No\.\s*(\d{13})", r"Enquiry\s+Input\s+(\d{13})"], flat) or ""
+    surname = line_value("Surname", ["Residential Address"])
+    first_name = line_value("First Name", ["Postal Address"])
+    second_name = line_value("Second Name", ["Telephone No.", "Title", "Gender"])
+    gender = line_value("Gender", ["Cellular/Mobile", "Cellular", "Mobile"])
+    dob = line_value("Date of Birth", ["E-mail Address", "Email Address"])
+    marital = line_value("Marital Status", ["Current Employer"])
+    email = regex_first([r"E-?mail\s+Address\s+([A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,})"], flat)
+    phone = regex_first([r"Cellular/Mobile\s+(\d{7,15})", r"Cellular\s+(\d{7,15})", r"Mobile\s+(\d{7,15})"], flat)
+    telephone_h = regex_first([r"Telephone\s+No\.\s*\(H\)\s+(\d{7,15})"], flat)
+    telephone_w = regex_first([r"Telephone\s+No\.\s*\(W\)\s+(\d{7,15})"], flat)
+    employer = ""
+    for row in lines:
+        if "Current Employer" in row:
+            employer = clean_spaces(re.split(r"Potential Fraud|XDS Presage|ID No\.", re.sub(r"^.*?Current Employer\s*", "", row, flags=re.I), flags=re.I)[0])
+            break
+
+    # Residential address can appear as the line before/after the Surname row in extracted XDS text.
+    residential = ""
+    for i, line in enumerate(lines):
+        if "Residential Address" in line:
+            before = lines[i - 1] if i > 0 else ""
+            after = lines[i + 1] if i + 1 < len(lines) else ""
+            candidates = []
+            # Same-line value after Residential Address is sometimes present.
+            same = re.sub(r"^.*?Residential Address\s*[:\-]?\s*", "", line, flags=re.I).strip()
+            if same and same.lower() != line.lower():
+                candidates.append(same)
+            if before and not re.search(r"\b(ID No|Reference|Surname|First Name|Second Name|Title|Gender|Date of Birth|Marital Status)\b", before, re.I):
+                candidates.append(before)
+            if after and not re.search(r"\b(First Name|Second Name|Title|Gender|Date of Birth|Marital Status|Potential Fraud)\b", after, re.I):
+                candidates.append(after)
+            residential = clean_spaces(" ".join(candidates))
+            break
+    if not residential:
+        residential = line_value("Residential Address", ["Postal Address", "Telephone No."])
+
+    # Remove obvious email values from bureau header; prefer the consumer email near Date of Birth.
+    if email and "xds.co.za" in email.lower():
+        email = regex_first([r"E-?mail\s+Address\s+([A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,})"], flat)
+
+    score = extract_score(text)
+    debt_review_listed = bool(re.search(r"Debt\s+Review\s+Status\s+(?!\*?\s*Nothing\s+on\s+Record)(Consumer\s+is\s+under\s+Debt\s+Review|Listed|Active)", flat, re.I))
+    return {
+        "firstName": title_case_name(first_name),
+        "secondName": title_case_name(second_name),
+        "surname": title_case_name(surname),
+        "fullName": clean_spaces(" ".join(x for x in [title_case_name(first_name), title_case_name(second_name), title_case_name(surname)] if x)),
+        "idNumber": id_number,
+        "dateOfBirth": dob,
+        "gender": title_case_name(gender),
+        "maritalStatus": title_case_name(marital),
+        "email": email,
+        "phone": re.sub(r"\D", "", phone or telephone_h or telephone_w),
+        "whatsapp": re.sub(r"\D", "", phone or ""),
+        "physicalAddress": residential,
+        "employer": employer,
+        "occupation": "",
+        "salaryFrequency": "Monthly",
+        "grossSalary": 0,
+        "nettSalary": 0,
+        "creditScore": score,
+        "scoreFound": score is not None,
+        "debtReviewListed": debt_review_listed,
+    }
+
 def extract_datanamix_basic_details(text: str) -> Dict[str, Any]:
     """Datanamix image/OCR-safe client detail extraction."""
     flat = clean_spaces((text or "").replace("\xa0", " "))
@@ -904,8 +1913,11 @@ def extract_datanamix_basic_details(text: str) -> Dict[str, Any]:
 
 def extract_basic_details(text: str) -> Dict[str, Any]:
     flat = clean_spaces((text or "").replace("\xa0", " "))
-    if "datanamix" in flat.lower():
+    low_flat = flat.lower()
+    if "datanamix" in low_flat:
         return extract_datanamix_basic_details(text)
+    if "xds" in low_flat or "xpert decision systems" in low_flat:
+        return extract_xds_basic_details(text)
     # XDS and Datanamix often use label-value pairs arranged in two columns.
     first_name = label_value(flat, "First Name", ["Postal Address", "Second Name", "Surname", "ID No", "ID Number", "Residential Address", "Title"])
     second_name = label_value(flat, "Second Name", ["Telephone No", "Home Telephone No", "Postal Address", "Surname", "ID No", "ID Number", "First Name"])
@@ -1079,6 +2091,7 @@ KNOWN_CREDITOR_ALIASES: List[Tuple[str, str]] = [
     ("ok furniture", "OK Furniture"), ("house & home", "House & Home"), ("homechoice", "HomeChoice"),
     ("makro", "Makro"), ("game", "Game"), ("rcs", "RCS"), ("sanlam", "Sanlam"),
     ("direct axis", "DirectAxis"), ("directaxis", "DirectAxis"), ("finchoice", "FinChoice"),
+    ("mbd", "MBD"), ("dmc909", "DMC909"), ("dmc", "DMC"),
     ("loan", "Loan Account"), ("vehicle finance", "Vehicle Finance"), ("home loan", "Home Loan"),
 ]
 
@@ -1155,14 +2168,42 @@ def has_formal_creditor_signal(name: str) -> bool:
     ]
     return any(word in low for word in formal_words)
 
+def is_identifier_like_creditor(name: str) -> bool:
+    """True when the parsed creditor is really an account/reference number.
+
+    Several bureau PDFs place account numbers or payment-profile identifiers in
+    the first column. Those must not become creditor names.
+    """
+    value = clean_spaces(name or "")
+    if not value:
+        return True
+    if known_creditor_name(value):
+        return False
+    letters = len(re.findall(r"[A-Za-z]", value))
+    digits = len(re.findall(r"\d", value))
+    # Pure numeric / reference-like values such as 61274-3803 or 73242240001.
+    if letters == 0 and digits >= 4:
+        return True
+    # Mostly digits with a small suffix/prefix is usually an account number, not a creditor.
+    if digits >= 5 and digits > letters * 2:
+        return True
+    # Single letter + long number / short code patterns from account type columns.
+    if re.fullmatch(r"[A-Za-z]?\d[\d\- /]{4,}", value):
+        return True
+    return False
+
+
 def is_plausible_creditor(name: str, require_meaningful: bool = True) -> bool:
-    low = clean_spaces(name).lower()
+    raw = clean_spaces(name)
+    low = raw.lower()
     if not low or low == "unknown creditor":
+        return False
+    if is_identifier_like_creditor(raw):
         return False
     if any(bad in low for bad in ["total", "count", "friday", "monday", "tuesday", "wednesday", "thursday", "saturday", "sunday", "months", "payment profile", "payment history", "summary", "description", "consumer", "telephone", "address"]):
         return False
     words = [w for w in re.split(r"\W+", low) if w]
-    meaningful = [w for w in words if w not in WEAK_ACCOUNT_WORDS and len(w) > 1]
+    meaningful = [w for w in words if w not in WEAK_ACCOUNT_WORDS and len(w) > 1 and not w.isdigit()]
     if require_meaningful and not meaningful:
         return False
     return True
@@ -1351,6 +2392,9 @@ def parse_accounts_from_tables(path: Path) -> List[Dict[str, Any]]:
                         known = known_creditor_name(line)
                         if known:
                             creditor = known
+                        # Reject rows where the detected creditor column is actually an account/reference number.
+                        if is_identifier_like_creditor(creditor):
+                            continue
                         if not is_plausible_creditor(creditor):
                             continue
                         if not known_creditor_name(creditor) and not has_formal_creditor_signal(creditor):
@@ -1392,73 +2436,128 @@ def money_re_named(name: str) -> str:
 
 
 def parse_xds_accounts(text: str) -> List[Dict[str, Any]]:
-    accounts: List[Dict[str, Any]] = []
-    m = re.search(r"Payment\s+Profile:\s+Credit\s+Account\s+Status(.*?)(?:Definitions\s+Indicators|Monthly\s+Payment\s+Behaviour|Payment\s+Profile:\s+National|Public\s+Domain\s+Records|$)", text or "", re.I | re.S)
-    if not m:
-        return accounts
-    section = m.group(1).replace("\xa0", " ")
-    section = re.sub(r"Last\s+Paid\s+Date.*?Company\s+Account\s+No\.?\s+Date\s+Account\s+Opened", " ", section, flags=re.I | re.S)
-    flat = clean_spaces(section)
-    date = r"\d{4}/\d{2}/\d{2}"
-    status = r"Active|In\s+Arrears|Closed|Paid\s+Up|Paid|Current|Written\s+Off|Handed\s+Over"
-    pattern_date_first = re.compile(
-        rf"(?P<open_date>{date})\s+(?P<creditor>[A-Za-z][A-Za-z0-9&().'\- ]{{2,90}}?)\s+"
-        rf"(?P<acc>\d[\d ]{{5,24}})\s+{money_re_named('opening')}\s+{money_re_named('current')}\s+{money_re_named('monthly')}\s+{money_re_named('arrears')}\s+"
-        rf"(?P<type>[A-Z])\s+(?P<status>{status})\s+(?P<last>{date})",
-        re.I,
-    )
-    spans: List[Tuple[int, int]] = []
-    for match in pattern_date_first.finditer(flat):
-        creditor = clean_spaces(match.group("creditor"))
-        if is_bad_account_line(creditor):
-            continue
-        code = match.group("type").upper()
-        accounts.append(build_account_from_fields(
-            creditor=creditor,
-            account_number=match.group("acc"),
-            account_type=ACCOUNT_TYPE_MAP.get(code, code),
-            opening=parse_money_token(match.group("opening")),
-            current=parse_money_token(match.group("current")),
-            monthly=parse_money_token(match.group("monthly")),
-            arrears=parse_money_token(match.group("arrears")),
-            status=match.group("status"),
-            open_date=match.group("open_date"),
-            last_paid=match.group("last"),
-            raw_line=match.group(0),
-            parser_source="xds-credit-status",
-        ))
-        spans.append(match.span())
+    """Parse XDS CPA + NLR account status rows using line-aware rules.
 
-    pattern_money_first = re.compile(
-        rf"{money_re_named('opening')}\s+{money_re_named('current')}\s+{money_re_named('monthly')}\s+{money_re_named('arrears')}\s+"
-        rf"(?P<type>[A-Z])\s+(?P<status>{status})\s+(?P<last>{date})\s+"
-        rf"(?P<acc>\d[\d ]{{5,24}})\s+"
-        rf"(?:(?P<creditor1>[A-Za-z][A-Za-z0-9&().'\- ]{{2,90}}?)\s+(?P<open_date1>{date})|(?P<open_date2>{date})\s+(?P<creditor2>[A-Za-z][A-Za-z0-9&().'\- ]{{2,90}}?))"
-        rf"(?=\s+(?:R\s*\d|{date}\s+[A-Za-z]|B\s+B\s+-|C\s+C\s+-|$))",
+    XDS report extraction commonly wraps account numbers and company names onto
+    neighbouring lines. This parser uses the account table row order from XDS:
+    Date Opened, Company, Account No, Open Balance/Credit Limit, Current Balance,
+    Instalment Amount, Arrears Amount, Type Code, Status, Last Paid Date.
+    """
+    accounts: List[Dict[str, Any]] = []
+    raw_lines = [clean_spaces(line.replace("\xa0", " ")) for line in (text or "").splitlines() if clean_spaces(line)]
+    date_re = re.compile(r"^(\d{4}/\d{2}/\d{2})\b")
+    amount_tail_re = re.compile(
+        r"R\s*([\d ]+)\s+R\s*([\d ]+)\s+R\s*([\d ]+)\s+R\s*([\d ]+)\s+([A-Z0-9])\s+"
+        r"(Active|Closed|Paid\s+Up|In\s+Arrears|Written\s+Off|Handed\s+Over|Current)"
+        r"(?:\s+(\d{4}/\d{2}/\d{2}))?\b",
         re.I,
     )
-    for match in pattern_money_first.finditer(flat):
-        if any(match.start() >= s and match.end() <= e for s, e in spans):
-            continue
-        creditor = clean_spaces(match.group("creditor1") or match.group("creditor2") or "")
-        open_date = match.group("open_date1") or match.group("open_date2") or ""
-        if is_bad_account_line(creditor):
-            continue
-        code = match.group("type").upper()
+
+    def section_lines(start_label: str, stop_labels: List[str]) -> List[str]:
+        start_idx = -1
+        for idx, line in enumerate(raw_lines):
+            if start_label.lower() in line.lower():
+                start_idx = idx + 1
+                break
+        if start_idx < 0:
+            return []
+        end_idx = len(raw_lines)
+        for idx in range(start_idx, len(raw_lines)):
+            low = raw_lines[idx].lower()
+            if any(stop.lower() in low for stop in stop_labels):
+                end_idx = idx
+                break
+        return raw_lines[start_idx:end_idx]
+
+    def digits_only(value: str) -> str:
+        return re.sub(r"\D", "", value or "")
+
+    def previous_account_context(lines: List[str], idx: int) -> Tuple[str, str]:
+        prev = lines[idx - 1] if idx > 0 else ""
+        creditor = ""
+        acc = ""
+        if prev and not date_re.search(prev) and not re.search(r"\b(R\s*\d|Definitions|Indicators|Company|Opened|Amount|Account)\b", prev, re.I):
+            # Ex: "Capitec Bank Access 0902221893130" or just "1010114349604"
+            m = re.search(r"^(?:(?P<name>.*?)[ ]+)?(?P<acc>\d[\d ]{5,24})$", prev)
+            if m:
+                creditor = clean_spaces(m.group("name") or "")
+                acc = digits_only(m.group("acc"))
+        return creditor, acc
+
+    def next_continuation(lines: List[str], idx: int) -> Tuple[str, str]:
+        nxt = lines[idx + 1] if idx + 1 < len(lines) else ""
+        if not nxt or date_re.search(nxt):
+            return "", ""
+        if re.fullmatch(r"\d{1,4}", nxt):
+            return "", nxt
+        # Ex: "Facility 604" continuation for Capitec Bank Access Facility + account suffix.
+        m = re.match(r"^(?P<name>[A-Za-z][A-Za-z&' .\-]{1,40})\s+(?P<suffix>\d{1,6})$", nxt)
+        if m and not re.search(r"Definitions|Indicators|Company|Account|Amount", nxt, re.I):
+            return clean_spaces(m.group("name")), m.group("suffix")
+        return "", ""
+
+    def add_from_date_line(lines: List[str], idx: int, source: str, nlr: bool = False) -> None:
+        line = lines[idx]
+        dm = date_re.match(line)
+        if not dm:
+            return
+        open_date = dm.group(1)
+        rest = line[dm.end():].strip()
+        money = amount_tail_re.search(rest)
+        if not money:
+            return
+        before_money = clean_spaces(rest[:money.start()])
+        prev_creditor, prev_acc = previous_account_context(lines, idx)
+        next_name, next_acc_suffix = next_continuation(lines, idx)
+
+        creditor = ""
+        acc = ""
+        if before_money:
+            # Normal rows contain "Creditor AccountNo" before the first money value.
+            m = re.match(r"^(?P<name>.*?)(?:\s+(?P<acc>\d[\d ]{5,24}))?$", before_money)
+            if m:
+                creditor = clean_spaces(m.group("name") or "")
+                acc = digits_only(m.group("acc") or "")
+        if not acc and prev_acc:
+            acc = prev_acc
+        if not creditor and prev_creditor:
+            creditor = prev_creditor
+        if creditor and next_name and next_name.lower() not in creditor.lower():
+            creditor = clean_spaces(f"{creditor} {next_name}")
+        if next_acc_suffix and acc and not acc.endswith(next_acc_suffix):
+            acc = f"{acc}{next_acc_suffix}"
+
+        if not creditor or is_bad_account_line(creditor):
+            return
+        code = (money.group(5) or "").upper()
+        account_type = ACCOUNT_TYPE_MAP.get(code, code)
+        if nlr and code == "P":
+            account_type = "Personal Loan"
         accounts.append(build_account_from_fields(
             creditor=creditor,
-            account_number=match.group("acc"),
-            account_type=ACCOUNT_TYPE_MAP.get(code, code),
-            opening=parse_money_token(match.group("opening")),
-            current=parse_money_token(match.group("current")),
-            monthly=parse_money_token(match.group("monthly")),
-            arrears=parse_money_token(match.group("arrears")),
-            status=match.group("status"),
+            account_number=acc,
+            account_type=account_type,
+            opening=parse_money_token(money.group(1)),
+            current=parse_money_token(money.group(2)),
+            monthly=parse_money_token(money.group(3)),
+            arrears=parse_money_token(money.group(4)),
+            status=money.group(6),
             open_date=open_date,
-            last_paid=match.group("last"),
-            raw_line=match.group(0),
-            parser_source="xds-credit-status",
+            last_paid=money.group(7) or "",
+            raw_line=" | ".join([lines[idx - 1] if idx > 0 else "", line, lines[idx + 1] if idx + 1 < len(lines) else ""]),
+            parser_source=source,
         ))
+
+    cpa_lines = section_lines("Payment Profile: Credit Account Status", ["B B - Building Loan", "Monthly Payment Behaviour", "Payment Profile: National", "Public Domain Records"])
+    for idx, line in enumerate(cpa_lines):
+        if date_re.match(line):
+            add_from_date_line(cpa_lines, idx, "xds-cpa-line", nlr=False)
+
+    nlr_lines = section_lines("Payment Profile: National Loans Register", ["1 1 - Payday", "Monthly Payment Behaviour", "Public Domain Records", "Definitions Indicators"])
+    for idx, line in enumerate(nlr_lines):
+        if date_re.match(line):
+            add_from_date_line(nlr_lines, idx, "xds-nlr-line", nlr=True)
+
     return dedupe_accounts(accounts)
 
 
@@ -1507,6 +2606,8 @@ def dedupe_accounts(accounts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     seen = set()
     for account in accounts:
         creditor = clean_spaces(account.get("creditorName", ""))
+        if is_identifier_like_creditor(creditor):
+            continue
         if not is_plausible_creditor(creditor):
             continue
         if is_bad_account_line(creditor):
@@ -1677,7 +2778,7 @@ def parse_credit_report(path: Path, original_filename: str) -> Dict[str, Any]:
     if text and not accounts:
         warnings.append("No account rows were confidently detected. Capture or verify accounts manually, or upload a clearer text-based PDF.")
     if accounts:
-        warnings.append("Parser is now strict: verify balances against the PDF, and add any missing creditors manually before sending a proposal.")
+        warnings.append("Parser is now strict: identifier-like rows are rejected, but verify balances against the PDF and add any missing creditors manually before admin/PDA handover.")
     else:
         warnings.append("The parser rejected weak rows instead of importing possible payment-history fragments. Add creditor rows manually or upload a clearer text-based report.")
     coach = evaluate_sales(basic, accounts)
@@ -1705,9 +2806,6 @@ def parse_credit_report(path: Path, original_filename: str) -> Dict[str, Any]:
 
 @app.get("/")
 def root():
-    index_file = FRONTEND_DIST / "index.html"
-    if index_file.exists():
-        return send_from_directory(FRONTEND_DIST, "index.html")
     return jsonify({"success": True, "app": APP_NAME, "version": APP_VERSION, "isolation": "X-Tenant-ID scoped"})
 
 
@@ -1718,55 +2816,10 @@ def health():
     return jsonify({"success": True, "status": "ok", "version": APP_VERSION, "tenants": len(db.get("tenants", {}))})
 
 
-@app.route("/api/tenants", methods=["GET", "POST"])
+@app.get("/api/tenants")
 def tenants():
     db = load_db()
-    if request.method == "GET":
-        return jsonify({"success": True, "tenants": public_tenant_summary(db)})
-
-    payload = request_json()
-    name = clean_spaces(payload.get("name") or payload.get("companyName") or "")
-    ncr = clean_spaces(payload.get("ncr") or payload.get("ncrNumber") or "")
-    admin_name = clean_spaces(payload.get("adminName") or "Tenant Admin")
-    admin_email = clean_spaces(payload.get("adminEmail") or payload.get("email") or "")
-    if not name:
-        return jsonify({"success": False, "error": "Tenant name is required"}), 400
-
-    base_slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "tenant"
-    tenant_id = base_slug
-    counter = 2
-    while tenant_id in db.setdefault("tenants", {}):
-        tenant_id = f"{base_slug}-{counter}"
-        counter += 1
-
-    admin_user = {
-        "id": f"{tenant_id}-admin",
-        "name": admin_name,
-        "role": "Admin",
-        "email": admin_email,
-    }
-    db["tenants"][tenant_id] = {
-        "id": tenant_id,
-        "name": name,
-        "ncr": ncr,
-        "users": [admin_user],
-        "clients": [],
-        "uploads": [],
-        "createdAt": now_iso(),
-    }
-    save_db(db)
-    return jsonify({
-        "success": True,
-        "tenant": {
-            "id": tenant_id,
-            "name": name,
-            "ncr": ncr,
-            "userCount": 1,
-            "clientCount": 0,
-        },
-        "user": admin_user,
-        "tenants": public_tenant_summary(db),
-    }), 201
+    return jsonify({"success": True, "tenants": public_tenant_summary(db)})
 
 
 @app.get("/api/users")
@@ -1800,6 +2853,74 @@ def me():
     user_id = requested_user_id()
     user = next((u for u in tenant.get("users", []) if u.get("id") == user_id), tenant.get("users", [{}])[0])
     return jsonify({"success": True, "tenant": {"id": tenant_id, "name": tenant.get("name"), "ncr": tenant.get("ncr")}, "user": user})
+
+
+@app.get("/api/dashboard/consultants")
+def consultant_dashboard_route():
+    db = load_db()
+    tenant_id, tenant = get_tenant(db)
+    if not tenant:
+        return tenant_error(tenant_id)
+    metrics = consultant_dashboard_metrics(tenant)
+    return jsonify({"success": True, "tenantId": tenant_id, **metrics, "storedSnapshots": len(tenant.get("commissionSnapshots", []))})
+
+
+@app.get("/api/manager/commission-stats")
+def manager_commission_stats_route():
+    db = load_db()
+    tenant_id, tenant = get_tenant(db)
+    if not tenant:
+        return tenant_error(tenant_id)
+    denied = require_role(tenant, ["Manager"])
+    if denied:
+        return denied
+    snapshot = manager_commission_snapshot(tenant, requested_user_id())
+    save_db(db)
+    return jsonify({
+        "success": True,
+        "tenantId": tenant_id,
+        "snapshot": snapshot,
+        "history": tenant.get("commissionSnapshots", [])[-12:],
+    })
+
+
+@app.get("/api/learning/product-knowledge")
+def product_knowledge_route():
+    db = load_db()
+    tenant_id, tenant = get_tenant(db)
+    if not tenant:
+        return tenant_error(tenant_id)
+    latest_user_result = None
+    user_id = requested_user_id()
+    user_results = [r for r in tenant.get("knowledgeAssessments", []) if r.get("userId") == user_id]
+    if user_results:
+        latest_user_result = sorted(user_results, key=lambda r: r.get("submittedAt", ""), reverse=True)[0]
+    return jsonify({"success": True, "tenantId": tenant_id, **public_product_knowledge(), "latestUserResult": latest_user_result, "leaderboard": knowledge_leaderboard(tenant)})
+
+
+@app.post("/api/learning/assessment/submit")
+def product_assessment_submit_route():
+    db = load_db()
+    tenant_id, tenant = get_tenant(db)
+    if not tenant:
+        return tenant_error(tenant_id)
+    user_id = requested_user_id()
+    user = current_user(tenant)
+    if not user:
+        return jsonify({"success": False, "error": "User not found inside this tenant"}), 404
+    payload = request_json()
+    result = grade_product_assessment(tenant, user_id, payload.get("answers", {}))
+    save_db(db)
+    return jsonify({"success": True, "tenantId": tenant_id, "result": result, "leaderboard": knowledge_leaderboard(tenant)})
+
+
+@app.get("/api/learning/assessment/leaderboard")
+def product_assessment_leaderboard_route():
+    db = load_db()
+    tenant_id, tenant = get_tenant(db)
+    if not tenant:
+        return tenant_error(tenant_id)
+    return jsonify({"success": True, "tenantId": tenant_id, "leaderboard": knowledge_leaderboard(tenant)})
 
 
 @app.get("/api/clients")
@@ -1951,6 +3072,250 @@ def creditor_match_route():
     return jsonify({"success": True, "contact": match_creditor(request.args.get("name", ""))})
 
 
+
+
+# ---------------------------------------------------------------------------
+# Public client portal helpers and pages
+# ---------------------------------------------------------------------------
+
+def html_escape(value: Any) -> str:
+    return str(value or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+
+
+def make_secure_token() -> str:
+    return secrets.token_urlsafe(24).replace("-", "")[:32]
+
+
+def store_portal_token(client: Dict[str, Any], kind: str, token: str) -> None:
+    client.setdefault("portalTokens", {})[kind] = {
+        "token": token,
+        "createdAt": now_iso(),
+        "expiresAt": (datetime.now(timezone.utc) + timedelta(days=30)).isoformat(),
+    }
+
+
+def create_secure_link(kind: str, tenant_id: str, client_id: str, base_url: str, client: Dict[str, Any] | None = None) -> str:
+    token = make_secure_token()
+    if client is not None:
+        store_portal_token(client, kind, token)
+    return f"{base_url.rstrip('/')}/{tenant_id}/{kind}/{client_id}/{token}"
+
+
+def validate_public_link(tenant_id: str, kind: str, client_id: str, token: str) -> Tuple[Dict[str, Any] | None, Dict[str, Any] | None, str]:
+    db = load_db()
+    tenant = db.get("tenants", {}).get(tenant_id)
+    if not tenant:
+        return None, None, "Unknown tenant"
+    client = find_client(tenant, client_id)
+    if not client:
+        return db, None, "Client not found"
+    stored = (client.get("portalTokens") or {}).get(kind, {})
+    if stored.get("token") != token:
+        return db, None, "This link is invalid or has been replaced by a newer link."
+    expires_at = stored.get("expiresAt")
+    if expires_at:
+        try:
+            if datetime.fromisoformat(expires_at) < datetime.now(timezone.utc):
+                return db, None, "This link has expired. Please ask your consultant for a new link."
+        except Exception:
+            pass
+    return db, client, ""
+
+
+def portal_page(title: str, body: str) -> str:
+    return f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'>
+<title>{html_escape(title)} · Fin-Tastic</title><style>
+body{{margin:0;font-family:Arial,Helvetica,sans-serif;background:#eef6f8;color:#0b1930}}.wrap{{max-width:840px;margin:30px auto;padding:18px}}.card{{background:#fff;border:1px solid #d8e4ec;border-radius:18px;padding:22px;box-shadow:0 20px 60px rgba(10,30,60,.08)}}h1{{margin:0 0 10px;font-size:28px}}p{{color:#52647b;line-height:1.5}}label{{display:block;margin:12px 0 6px;font-weight:700}}input,select,textarea{{width:100%;box-sizing:border-box;border:1px solid #cdddea;border-radius:10px;padding:11px;background:#f8fbfd}}button{{border:0;border-radius:12px;padding:12px 16px;background:#0e8c8c;color:#fff;font-weight:800;cursor:pointer}}.muted{{color:#68788d;font-size:13px}}.ok{{padding:12px;border-radius:12px;background:#e8fff4;border:1px solid #aee8cb;color:#095f37}}.bad{{padding:12px;border-radius:12px;background:#fff2f2;border:1px solid #f2b8b8;color:#8a1f1f}}.doc{{display:grid;grid-template-columns:1fr 170px;gap:10px;align-items:center;border:1px solid #e4edf4;border-radius:12px;padding:12px;margin:10px 0}}.doc small{{color:#607086}}.badge{{display:inline-block;border-radius:999px;padding:5px 9px;background:#edf4fb;font-weight:700;font-size:12px}}</style>
+</head><body><main class='wrap'><section class='card'>{body}</section></main></body></html>"""
+
+
+def portal_error(message: str, status: int = 400):
+    return portal_page("Link problem", f"<h1>Link problem</h1><div class='bad'>{html_escape(message)}</div><p>Please contact your consultant and ask them to send a new link.</p>"), status, {"Content-Type": "text/html; charset=utf-8"}
+
+
+@app.get("/portal/<tenant_id>/documents/<client_id>/<token>")
+def public_documents_page(tenant_id: str, client_id: str, token: str):
+    db, client, error = validate_public_link(tenant_id, "documents", client_id, token)
+    if error or not client:
+        return portal_error(error or "Invalid link")
+    ensure_client_workflow(client)
+    items = client.get("documents", {}).get("items", [])
+    doc_options = "".join(f"<option value='{html_escape(item.get('name'))}'>{html_escape(item.get('name'))} - {html_escape(item.get('status'))}</option>" for item in items)
+    docs_html = "".join(f"<div class='doc'><div><strong>{html_escape(item.get('name'))}</strong><br><small>{html_escape(item.get('filename') or 'Awaiting upload')}</small></div><span class='badge'>{html_escape(item.get('status') or 'Missing')}</span></div>" for item in items)
+    body = f"""<h1>Upload your documents</h1><p class='muted'>Client: {html_escape(client.get('fullName'))} · Tenant: {html_escape(tenant_id)}</p><p>Please choose the document type and upload the matching file. PDF, JPG and PNG files are accepted.</p><form method='post' enctype='multipart/form-data'><label>Document type</label><select name='docName'>{doc_options}</select><label>Choose file</label><input type='file' name='document' accept='.pdf,.jpg,.jpeg,.png' required><p><button type='submit'>Upload Document</button></p></form><h2>Required documents</h2>{docs_html}"""
+    return portal_page("Upload documents", body), 200, {"Content-Type": "text/html; charset=utf-8"}
+
+
+@app.post("/portal/<tenant_id>/documents/<client_id>/<token>")
+def public_documents_upload(tenant_id: str, client_id: str, token: str):
+    db, client, error = validate_public_link(tenant_id, "documents", client_id, token)
+    if error or not db or not client:
+        return portal_error(error or "Invalid link")
+    ensure_client_workflow(client)
+    doc_name = request.form.get("docName") or "Client document"
+    file = request.files.get("document") or request.files.get("file")
+    if not file or not file.filename:
+        return portal_error("Please choose a file to upload.")
+    safe_name = re.sub(r"[^A-Za-z0-9_.-]", "_", file.filename)
+    doc_dir = UPLOAD_DIR / tenant_id / "client_docs" / client_id
+    doc_dir.mkdir(parents=True, exist_ok=True)
+    stored = doc_dir / f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{secrets.token_hex(4)}_{safe_name}"
+    file.save(stored)
+    matched = False
+    for item in client["documents"].get("items", []):
+        if item.get("name") == doc_name:
+            item.update({"status": "Uploaded", "filename": file.filename, "uploadedAt": now_iso(), "source": "portal", "storedPath": str(stored)})
+            matched = True
+            break
+    if not matched:
+        client["documents"].setdefault("items", []).append({"name": doc_name, "status": "Uploaded", "filename": file.filename, "uploadedAt": now_iso(), "source": "portal", "storedPath": str(stored), "notes": ""})
+    client["documents"]["requestStatus"] = "Partially Uploaded"
+    if client["documents"].get("items") and all(item.get("status") == "Uploaded" for item in client["documents"].get("items", [])):
+        client["documents"]["requestStatus"] = "Complete"
+        client["status"] = "Docs Received"
+    client["updatedAt"] = now_iso()
+    save_db(db)
+    return portal_page("Document uploaded", f"<h1>Document uploaded</h1><div class='ok'>{html_escape(doc_name)} was uploaded successfully.</div><p>You may go back and upload another document using the same link.</p>"), 200, {"Content-Type": "text/html; charset=utf-8"}
+
+
+@app.get("/portal/<tenant_id>/signature/<client_id>/<token>")
+def public_signature_page(tenant_id: str, client_id: str, token: str):
+    db, client, error = validate_public_link(tenant_id, "signature", client_id, token)
+    if error or not client:
+        return portal_error(error or "Invalid link")
+    body = f"""<h1>Confirm your signature authority</h1><p class='muted'>Client: {html_escape(client.get('fullName'))}</p><p>By clicking confirm, you acknowledge that you received the service documents/mandate and authorised the consultant/admin team to proceed with the selected service workflow.</p><form method='post'><label>Full name</label><input name='signerName' value='{html_escape(client.get('fullName'))}' required><label>South African ID number</label><input name='idNumber' value='{html_escape(client.get('idNumber'))}' required><label><input type='checkbox' name='accepted' value='yes' required style='width:auto'> I confirm and accept electronic signature/authority for this file.</label><p><button type='submit'>Confirm Signature</button></p></form>"""
+    return portal_page("Signature", body), 200, {"Content-Type": "text/html; charset=utf-8"}
+
+
+@app.post("/portal/<tenant_id>/signature/<client_id>/<token>")
+def public_signature_submit(tenant_id: str, client_id: str, token: str):
+    db, client, error = validate_public_link(tenant_id, "signature", client_id, token)
+    if error or not db or not client:
+        return portal_error(error or "Invalid link")
+    signer = request.form.get("signerName") or client.get("fullName")
+    client.setdefault("signature", {})
+    client["signature"].update({"status": "Signed", "signedAt": now_iso(), "signedBy": signer, "signedIp": request.remote_addr or ""})
+    client["updatedAt"] = now_iso()
+    save_db(db)
+    return portal_page("Signature confirmed", f"<h1>Signature confirmed</h1><div class='ok'>Thank you, {html_escape(signer)}. Your signature status is now saved.</div>"), 200, {"Content-Type": "text/html; charset=utf-8"}
+
+
+
+def render_split_nupay_page(tenant_id: str, mandate_type: str, client_id: str, token: str):
+    db, client, error = validate_public_link(tenant_id, f"nupay-{mandate_type}", client_id, token)
+    if error or not client:
+        return portal_error(error or "Invalid link")
+    mandate = (client.get("nupayMandates") or {}).get(mandate_type, {})
+    if not mandate:
+        return portal_error("Mandate not found. Please ask your consultant to send a new DebiCheck link.")
+    amount = money_to_float(mandate.get("amount"))
+    start_date = mandate.get("startDate") or "To be confirmed"
+    debit_day = mandate.get("debitDay") or client.get("bank", {}).get("debitDay", "")
+    if mandate_type == "removal":
+        months = mandate.get("drrMonths") or 1
+        title = "Debt Review Removal DebiCheck"
+        detail_html = f"<ul><li>Service: <strong>Debt Review Removal</strong></li><li>Removal fee total: <strong>R {DRR_SERVICE_FEE:,.2f}</strong></li><li>Collection split: <strong>{html_escape(months)}</strong> month(s)</li><li>Monthly debit: <strong>R {amount:,.2f}</strong></li><li>Start date: <strong>{html_escape(start_date)}</strong></li></ul>"
+        accept_text = "I accept this NuPay DebiCheck mandate for the Debt Review Removal service fee shown above."
+    else:
+        title = "Debt Mediation DebiCheck"
+        detail_html = f"<ul><li>Service: <strong>Debt Mediation / reduced creditor payment</strong></li><li>Monthly reduced payment: <strong>R {amount:,.2f}</strong></li><li>Collection period: <strong>Ongoing monthly</strong></li><li>Start date: <strong>{html_escape(start_date)}</strong></li></ul>"
+        accept_text = "I accept this ongoing NuPay DebiCheck mandate for the Debt Mediation reduced payment shown above."
+    body = f"""<h1>{html_escape(title)} confirmation</h1><p class='muted'>Client: {html_escape(client.get('fullName'))}</p>{detail_html}<p>Debit day: <strong>{html_escape(debit_day)}</strong></p><form method='post'><label>Account holder</label><input name='accountHolder' value='{html_escape(client.get('bank', {}).get('accountHolder') or client.get('fullName'))}' required><label><input type='checkbox' name='accepted' value='yes' required style='width:auto'> {html_escape(accept_text)}</label><p><button type='submit'>Accept DebiCheck</button></p></form>"""
+    return portal_page(title, body), 200, {"Content-Type": "text/html; charset=utf-8"}
+
+
+def submit_split_nupay_page(tenant_id: str, mandate_type: str, client_id: str, token: str):
+    db, client, error = validate_public_link(tenant_id, f"nupay-{mandate_type}", client_id, token)
+    if error or not db or not client:
+        return portal_error(error or "Invalid link")
+    client.setdefault("nupayMandates", {})
+    mandate = client["nupayMandates"].setdefault(mandate_type, default_nupay_record(mandate_type))
+    event = {"at": now_iso(), "action": f"NuPay DebiCheck accepted by client for {mandate_type}", "amount": money_to_float(mandate.get("amount")), "debitDay": mandate.get("debitDay", ""), "startDate": mandate.get("startDate", ""), "drrMonths": mandate.get("drrMonths"), "includesDrrFee": mandate_type == "removal", "mandateType": mandate_type}
+    mandate.setdefault("history", []).append(event)
+    mandate.update({"status": "Accepted", "acceptedAt": now_iso(), "acceptedBy": request.form.get("accountHolder") or client.get("fullName"), "acceptedIp": request.remote_addr or ""})
+    client["nupayMandates"][mandate_type] = mandate
+    client["nupayMandate"] = combined_nupay_summary(client)
+    client["updatedAt"] = now_iso()
+    save_db(db)
+    return portal_page("DebiCheck accepted", f"<h1>DebiCheck accepted</h1><div class='ok'>Your {html_escape(mandate_type)} DebiCheck acceptance was saved successfully.</div>"), 200, {"Content-Type": "text/html; charset=utf-8"}
+
+
+@app.get("/portal/<tenant_id>/nupay-removal/<client_id>/<token>")
+def public_nupay_removal_page(tenant_id: str, client_id: str, token: str):
+    return render_split_nupay_page(tenant_id, "removal", client_id, token)
+
+
+@app.post("/portal/<tenant_id>/nupay-removal/<client_id>/<token>")
+def public_nupay_removal_submit(tenant_id: str, client_id: str, token: str):
+    return submit_split_nupay_page(tenant_id, "removal", client_id, token)
+
+
+@app.get("/portal/<tenant_id>/nupay-mediation/<client_id>/<token>")
+def public_nupay_mediation_page(tenant_id: str, client_id: str, token: str):
+    return render_split_nupay_page(tenant_id, "mediation", client_id, token)
+
+
+@app.post("/portal/<tenant_id>/nupay-mediation/<client_id>/<token>")
+def public_nupay_mediation_submit(tenant_id: str, client_id: str, token: str):
+    return submit_split_nupay_page(tenant_id, "mediation", client_id, token)
+
+
+@app.get("/portal/<tenant_id>/nupay/<client_id>/<token>")
+def public_nupay_page(tenant_id: str, client_id: str, token: str):
+    db, client, error = validate_public_link(tenant_id, "nupay", client_id, token)
+    if error or not client:
+        return portal_error(error or "Invalid link")
+    mandate = client.get("nupayMandate", {})
+    components = mandate.get("components", {}) if isinstance(mandate.get("components"), dict) else {}
+    reduced = money_to_float(components.get("reducedPayment"))
+    drr_total = money_to_float(components.get("drrServiceFeeTotal"))
+    drr_monthly = money_to_float(components.get("drrServiceFeeMonthly"))
+    drr_months = mandate.get("drrMonths", 0) or 0
+    amount = money_to_float(mandate.get("amount"))
+    if mandate.get("includesDrrFee"):
+        breakdown_html = f"<ul><li>Debt Mediation / reduced creditor payment: <strong>R {reduced:,.2f}</strong> p/m ongoing</li><li>Debt Review Removal service fee: <strong>R {drr_total:,.2f}</strong> over <strong>{html_escape(drr_months)}</strong> month(s) = <strong>R {drr_monthly:,.2f}</strong> p/m</li><li>Total debit during DRR fee collection: <strong>R {amount:,.2f}</strong> p/m</li><li>After the DRR fee period: <strong>R {reduced:,.2f}</strong> p/m ongoing reduced payment</li></ul>"
+        accept_text = "I accept this debit order mandate, including the Debt Review Removal service-fee collection shown above."
+    else:
+        breakdown_html = f"<ul><li>Debt Mediation / reduced creditor payment: <strong>R {reduced:,.2f}</strong> p/m ongoing</li><li>Debt Review Removal service fee: <strong>Not applicable for this selected service</strong></li></ul>"
+        accept_text = "I accept this ongoing monthly NuPay DebiCheck mandate for the reduced payment shown above."
+    body = f"""<h1>NuPay DebiCheck mandate confirmation</h1><p class='muted'>Client: {html_escape(client.get('fullName'))}</p>{breakdown_html}<p>Total NuPay DebiCheck amount now being mandated: <strong>R {amount:,.2f}</strong><br>Debit day: <strong>{html_escape(mandate.get('debitDay'))}</strong></p><form method='post'><label>Account holder</label><input name='accountHolder' value='{html_escape(client.get('bank', {}).get('accountHolder') or client.get('fullName'))}' required><label><input type='checkbox' name='accepted' value='yes' required style='width:auto'> {html_escape(accept_text)}</label><p><button type='submit'>Accept Mandate</button></p></form>"""
+    return portal_page("NuPay mandate", body), 200, {"Content-Type": "text/html; charset=utf-8"}
+
+
+@app.post("/portal/<tenant_id>/nupay/<client_id>/<token>")
+def public_nupay_submit(tenant_id: str, client_id: str, token: str):
+    db, client, error = validate_public_link(tenant_id, "nupay", client_id, token)
+    if error or not db or not client:
+        return portal_error(error or "Invalid link")
+    client.setdefault("nupayMandate", {})
+    event = {"at": now_iso(), "action": "NuPay DebiCheck accepted by client", "amount": money_to_float(client["nupayMandate"].get("amount")), "debitDay": client["nupayMandate"].get("debitDay", ""), "drrMonths": client["nupayMandate"].get("drrMonths"), "includesDrrFee": client["nupayMandate"].get("includesDrrFee", False)}
+    client["nupayMandate"].setdefault("history", []).append(event)
+    client["nupayMandate"].update({"status": "Accepted", "acceptedAt": now_iso(), "acceptedBy": request.form.get("accountHolder") or client.get("fullName"), "acceptedIp": request.remote_addr or ""})
+    client["updatedAt"] = now_iso()
+    save_db(db)
+    return portal_page("Mandate accepted", "<h1>Mandate accepted</h1><div class='ok'>Your mandate acceptance was saved successfully.</div>"), 200, {"Content-Type": "text/html; charset=utf-8"}
+
+
+@app.get("/api/compliance/nca-minimums")
+def nca_minimums_route():
+    return jsonify({
+        "success": True,
+        "note": "Operational minimum controls for workflow configuration. Confirm legal wording with the registered debt counsellor / compliance officer.",
+        "debtReviewMinimums": [
+            {"step": 1, "control": "Consultant handover received and selected service locked", "evidence": "Handover snapshot"},
+            {"step": 2, "control": "Signed Form 16 before statutory debt-review notices", "evidence": "Signed Form 16 + ID copy + latest payslip + 3 months bank statements"},
+            {"step": 3, "control": "Form 17.1 notice to all included credit providers and registered credit bureaus", "evidence": "17.1 copy + dispatch proof per party"},
+            {"step": 4, "control": "COB request, follow-up, capture and reconciliation per included creditor", "evidence": "COB or follow-up proof per creditor"},
+            {"step": 5, "control": "Income, living budget and over-indebtedness assessment", "evidence": "Affordability assessment + decision"},
+            {"step": 6, "control": "Form 17.2 outcome after assessment", "evidence": "17.2 copy + proof of dispatch"},
+            {"step": 7, "control": "Restructuring proposal and creditor response tracking", "evidence": "Proposal + acceptance/rejection/counter-offer register"},
+            {"step": 8, "control": "Consent order, court or NCT preparation where applicable", "evidence": "Legal pack/reference/submission proof"},
+            {"step": 9, "control": "PDA/payment setup and active aftercare", "evidence": "PDA reference, first-payment plan and monitoring notes"},
+            {"step": 10, "control": "Form 19 only when clearance requirements are met", "evidence": "Paid-up/settlement/legal confirmation + Form 19"},
+            {"step": 11, "control": "Bureau update and final closure", "evidence": "Bureau update proof + final client notice"},
+        ],
+    })
+
 @app.post("/api/portal/links")
 def portal_links_route():
     db = load_db()
@@ -1963,24 +3328,21 @@ def portal_links_route():
     if not client:
         return jsonify({"success": False, "error": "Client not found in this tenant", "tenantId": tenant_id}), 404
     base_url = (payload.get("baseUrl") or request.host_url.rstrip("/") + "/portal").rstrip("/")
-    token_seed = f"{tenant_id}:{client_id}:{secrets.token_hex(8)}"
-    token = hashlib.sha256(token_seed.encode()).hexdigest()[:24]
+    signature_link = create_secure_link("signature", tenant_id, client_id, base_url, client)
+    upload_link = create_secure_link("documents", tenant_id, client_id, base_url, client)
     links = {
-        "signatureLink": f"{base_url}/{tenant_id}/signature/{client_id}/{token}",
-        "uploadLink": f"{base_url}/{tenant_id}/upload/{client_id}/{token}",
+        "signatureLink": signature_link,
+        "uploadLink": upload_link,
         "createdAt": now_iso(),
     }
+    client.setdefault("signature", {}).update({"link": signature_link, "status": "Sent", "sentAt": now_iso()})
+    client.setdefault("documents", {}).update({"uploadLink": upload_link, "requestStatus": "Sent", "sentAt": now_iso()})
     client["portalLinks"] = links
     client["updatedAt"] = now_iso()
     save_db(db)
     return jsonify({"success": True, "tenantId": tenant_id, "clientId": client_id, **links})
 
 
-
-def create_secure_link(kind: str, tenant_id: str, client_id: str, base_url: str) -> str:
-    token_seed = f"{kind}:{tenant_id}:{client_id}:{secrets.token_hex(12)}"
-    token = hashlib.sha256(token_seed.encode()).hexdigest()[:28]
-    return f"{base_url.rstrip('/')}/{tenant_id}/{kind}/{client_id}/{token}"
 
 
 def admin_snapshot(client: Dict[str, Any], tenant_id: str, user_id: str) -> Dict[str, Any]:
@@ -1991,9 +3353,12 @@ def admin_snapshot(client: Dict[str, Any], tenant_id: str, user_id: str) -> Dict
         "clientId": client.get("id"),
         "clientName": client.get("fullName"),
         "serviceType": coach.get("service"),
+        "serviceTypes": client.get("serviceTypes") or admin_services_for(client, coach),
         "status": client.get("status"),
         "fees": {
-            "drrFee": 7000 if coach.get("service") == "Debt Review Removal" else 0,
+            "drrFee": DRR_SERVICE_FEE if "Debt Review Removal" in admin_services_for(client, coach) else 0,
+            "drrFeeMonthly": client.get("nupayMandate", {}).get("components", {}).get("drrServiceFeeMonthly", 0),
+            "reducedPayment": client.get("nupayMandate", {}).get("components", {}).get("reducedPayment", coach.get("totals", {}).get("reducedInstalment", 0)),
             "nupayAmount": client.get("nupayMandate", {}).get("amount", 0),
             "reducedInstalment": coach.get("totals", {}).get("reducedInstalment", 0),
             "originalInstalment": coach.get("totals", {}).get("originalInstalment", 0),
@@ -2001,9 +3366,12 @@ def admin_snapshot(client: Dict[str, Any], tenant_id: str, user_id: str) -> Dict
         },
         "creditorsIncluded": [a for a in client.get("accounts", []) if a.get("included", True)],
         "documents": client.get("documents", {}),
+        "budget": client.get("budget", default_living_budget()),
+        "livingExpenseTotal": living_expense_total(client.get("budget")),
         "signature": client.get("signature", {}),
         "nupayMandate": client.get("nupayMandate", {}),
         "pdaInfo": client.get("pdaInfo", {}),
+        "adminWorkflow": client.get("adminWorkflow", {}),
         "createdAt": now_iso(),
     }
 
@@ -2022,7 +3390,7 @@ def request_client_documents(client_id: str):
     base_url = (payload.get("baseUrl") or request.host_url.rstrip("/") + "/portal").rstrip("/")
     client["documents"]["requestStatus"] = "Sent"
     client["documents"]["sentAt"] = now_iso()
-    client["documents"]["uploadLink"] = create_secure_link("documents", tenant_id, client_id, base_url)
+    client["documents"]["uploadLink"] = create_secure_link("documents", tenant_id, client_id, base_url, client)
     for item in client["documents"].get("items", []):
         if item.get("status") == "Missing":
             item["status"] = "Requested"
@@ -2080,7 +3448,7 @@ def send_signature_link(client_id: str):
     ensure_client_workflow(client)
     payload = request_json()
     base_url = (payload.get("baseUrl") or request.host_url.rstrip("/") + "/portal").rstrip("/")
-    client["signature"].update({"status": "Sent", "link": create_secure_link("signature", tenant_id, client_id, base_url), "sentAt": now_iso()})
+    client["signature"].update({"status": "Sent", "link": create_secure_link("signature", tenant_id, client_id, base_url, client), "sentAt": now_iso()})
     client["updatedAt"] = now_iso()
     save_db(db)
     return jsonify({"success": True, "tenantId": tenant_id, "client": client, "signature": client["signature"]})
@@ -2102,6 +3470,111 @@ def mark_signature_signed(client_id: str):
     return jsonify({"success": True, "tenantId": tenant_id, "client": client, "signature": client["signature"]})
 
 
+
+def _mandate_type_or_error(mandate_type: str) -> str | None:
+    if mandate_type in ("removal", "mediation"):
+        return mandate_type
+    return None
+
+
+@app.post("/api/clients/<client_id>/mandates/<mandate_type>/send")
+def send_split_nupay_mandate(client_id: str, mandate_type: str):
+    mandate_type = _mandate_type_or_error(mandate_type) or ""
+    if not mandate_type:
+        return jsonify({"success": False, "error": "Mandate type must be removal or mediation"}), 400
+    db = load_db()
+    tenant_id, tenant = get_tenant(db)
+    if not tenant:
+        return tenant_error(tenant_id)
+    client = find_client(tenant, client_id)
+    if not client:
+        return jsonify({"success": False, "error": "Client not found in this tenant", "tenantId": tenant_id}), 404
+    ensure_client_workflow(client)
+    payload = request_json()
+    coach = client.get("coach") or evaluate_sales(client, client.get("accounts", []))
+    split = split_nupay_mandates(client, coach)
+    mandate = split[mandate_type]
+    calculated_amount = money_to_float(mandate.get("components", {}).get("totalMonthlyCollection"), mandate.get("amount"))
+    if calculated_amount <= 0:
+        label = "Debt Review Removal fee" if mandate_type == "removal" else "Debt Mediation reduced payment"
+        return jsonify({"success": False, "error": f"{label} DebiCheck is not applicable for this client", "tenantId": tenant_id}), 400
+    amount = money_to_float(payload.get("amount"), calculated_amount) if payload.get("useCustomAmount") is True else calculated_amount
+    debit_day = str(payload.get("debitDay") or client.get("bank", {}).get("debitDay") or mandate.get("debitDay") or "25")
+    start_date = str(payload.get("startDate") or mandate.get("startDate") or "")
+    drr_months = clamp_drr_months(payload.get("drrMonths") or mandate.get("drrMonths") or 3) if mandate_type == "removal" else 0
+    components = payload.get("components") if isinstance(payload.get("components"), dict) else dict(mandate.get("components", {}))
+    components.update({"totalMonthlyCollection": amount, "startDate": start_date, "mandateKind": mandate_type})
+    if mandate_type == "removal":
+        components.update({"drrServiceFeeMonthly": amount, "drrServiceFeeTotal": DRR_SERVICE_FEE, "drrFeeMonthsRemaining": drr_months, "reducedPayment": 0})
+    else:
+        components.update({"reducedPayment": amount, "ongoingMonthlyCollection": amount, "drrServiceFeeMonthly": 0, "drrServiceFeeTotal": 0, "drrFeeMonthsRemaining": 0})
+    mandate_id = new_id("nupay")
+    base_url = (payload.get("baseUrl") or request.host_url.rstrip("/") + "/portal").rstrip("/")
+    portal_kind = f"nupay-{mandate_type}"
+    event = {"at": now_iso(), "action": f"NuPay DebiCheck sent for {mandate_type}", "amount": amount, "debitDay": debit_day, "startDate": start_date, "drrMonths": drr_months, "includesDrrFee": mandate_type == "removal", "mandateType": mandate_type}
+    previous = client.setdefault("nupayMandates", {}).get(mandate_type, default_nupay_record(mandate_type))
+    history = previous.get("history", []) + [event]
+    client.setdefault("nupayMandates", {})[mandate_type] = {
+        **default_nupay_record(mandate_type),
+        "status": "Pending Acceptance",
+        "mandateId": mandate_id,
+        "link": create_secure_link(portal_kind, tenant_id, client_id, base_url, client),
+        "amount": amount,
+        "debitDay": debit_day,
+        "startDate": start_date,
+        "mandateType": mandate_type,
+        "drrMonths": drr_months,
+        "includesDrrFee": mandate_type == "removal",
+        "components": components,
+        "sentAt": now_iso(),
+        "cancelledAt": "",
+        "history": history,
+    }
+    client["nupayMandate"] = combined_nupay_summary(client)
+    client["updatedAt"] = now_iso()
+    save_db(db)
+    return jsonify({"success": True, "tenantId": tenant_id, "client": client, "mandate": client["nupayMandates"][mandate_type], "mandateType": mandate_type})
+
+
+@app.get("/api/clients/<client_id>/mandates/<mandate_type>/status")
+def split_mandate_status(client_id: str, mandate_type: str):
+    mandate_type = _mandate_type_or_error(mandate_type) or ""
+    if not mandate_type:
+        return jsonify({"success": False, "error": "Mandate type must be removal or mediation"}), 400
+    db = load_db()
+    tenant_id, tenant = get_tenant(db)
+    if not tenant:
+        return tenant_error(tenant_id)
+    client = find_client(tenant, client_id)
+    if not client:
+        return jsonify({"success": False, "error": "Client not found in this tenant", "tenantId": tenant_id}), 404
+    ensure_client_workflow(client)
+    return jsonify({"success": True, "tenantId": tenant_id, "mandate": client.get("nupayMandates", {}).get(mandate_type, default_nupay_record(mandate_type)), "mandateType": mandate_type})
+
+
+@app.post("/api/clients/<client_id>/mandates/<mandate_type>/cancel")
+def cancel_split_nupay_mandate(client_id: str, mandate_type: str):
+    mandate_type = _mandate_type_or_error(mandate_type) or ""
+    if not mandate_type:
+        return jsonify({"success": False, "error": "Mandate type must be removal or mediation"}), 400
+    db = load_db()
+    tenant_id, tenant = get_tenant(db)
+    if not tenant:
+        return tenant_error(tenant_id)
+    client = find_client(tenant, client_id)
+    if not client:
+        return jsonify({"success": False, "error": "Client not found in this tenant", "tenantId": tenant_id}), 404
+    ensure_client_workflow(client)
+    current = client.setdefault("nupayMandates", {}).get(mandate_type, default_nupay_record(mandate_type))
+    history = current.get("history", []) + [{"at": now_iso(), "action": f"NuPay DebiCheck cancelled for {mandate_type}", "mandateType": mandate_type}]
+    current.update({"status": "Cancelled", "cancelledAt": now_iso(), "history": history})
+    client["nupayMandates"][mandate_type] = current
+    client["nupayMandate"] = combined_nupay_summary(client)
+    client["updatedAt"] = now_iso()
+    save_db(db)
+    return jsonify({"success": True, "tenantId": tenant_id, "client": client, "mandate": current, "mandateType": mandate_type})
+
+
 @app.post("/api/clients/<client_id>/mandate/send")
 def send_nupay_mandate(client_id: str):
     db = load_db()
@@ -2114,13 +3587,19 @@ def send_nupay_mandate(client_id: str):
     ensure_client_workflow(client)
     payload = request_json()
     coach = client.get("coach") or evaluate_sales(client, client.get("accounts", []))
-    amount = money_to_float(payload.get("amount"), money_to_float(client.get("nupayMandate", {}).get("amount"), coach.get("totals", {}).get("reducedInstalment", 0)))
+    breakdown = nupay_mandate_breakdown(client, coach, payload.get("drrMonths") or client.get("nupayMandate", {}).get("drrMonths") or 3)
+    # Default rule: Debt Mediation reduced payments are ongoing monthly collections.
+    # Only DRR/DRR+Mediation clients add the DRR service-fee portion for the selected 1-3 month split.
+    # Only allow a manual override when the caller explicitly sends useCustomAmount=true.
+    amount = money_to_float(payload.get("amount"), breakdown["amount"]) if payload.get("useCustomAmount") is True else breakdown["amount"]
+    components = payload.get("components") if isinstance(payload.get("components"), dict) else breakdown["components"]
+    components["totalMonthlyCollection"] = amount
     debit_day = str(payload.get("debitDay") or client.get("bank", {}).get("debitDay") or "25")
     mandate_id = new_id("nupay")
     base_url = (payload.get("baseUrl") or request.host_url.rstrip("/") + "/portal").rstrip("/")
-    event = {"at": now_iso(), "action": "Mandate sent", "amount": amount, "debitDay": debit_day}
+    event = {"at": now_iso(), "action": "NuPay DebiCheck sent", "amount": amount, "debitDay": debit_day, "drrMonths": breakdown["drrMonths"], "includesDrrFee": breakdown["includesDrrFee"]}
     history = client.get("nupayMandate", {}).get("history", []) + [event]
-    client["nupayMandate"] = {"status": "Pending Acceptance", "mandateId": mandate_id, "link": create_secure_link("nupay", tenant_id, client_id, base_url), "amount": amount, "debitDay": debit_day, "sentAt": now_iso(), "cancelledAt": "", "history": history}
+    client["nupayMandate"] = {"status": "Pending Acceptance", "mandateId": mandate_id, "link": create_secure_link("nupay", tenant_id, client_id, base_url, client), "amount": amount, "debitDay": debit_day, "drrMonths": breakdown["drrMonths"], "includesDrrFee": breakdown["includesDrrFee"], "components": components, "sentAt": now_iso(), "cancelledAt": "", "history": history}
     client["updatedAt"] = now_iso()
     save_db(db)
     return jsonify({"success": True, "tenantId": tenant_id, "client": client, "mandate": client["nupayMandate"]})
@@ -2149,7 +3628,7 @@ def cancel_nupay_mandate(client_id: str):
     if not client:
         return jsonify({"success": False, "error": "Client not found in this tenant", "tenantId": tenant_id}), 404
     ensure_client_workflow(client)
-    history = client.get("nupayMandate", {}).get("history", []) + [{"at": now_iso(), "action": "Mandate cancelled"}]
+    history = client.get("nupayMandate", {}).get("history", []) + [{"at": now_iso(), "action": "NuPay DebiCheck cancelled"}]
     client["nupayMandate"].update({"status": "Cancelled", "cancelledAt": now_iso(), "history": history})
     client["updatedAt"] = now_iso()
     save_db(db)
@@ -2166,7 +3645,7 @@ def resend_nupay_mandate(client_id: str):
     if tenant:
         client = find_client(tenant, client_id)
         if client:
-            client.setdefault("nupayMandate", {}).setdefault("history", []).append({"at": now_iso(), "action": "Mandate resent", "reason": cancel_reason})
+            client.setdefault("nupayMandate", {}).setdefault("history", []).append({"at": now_iso(), "action": "NuPay DebiCheck resent", "reason": cancel_reason})
             save_db(db)
     return response
 
@@ -2190,6 +3669,152 @@ def update_pda_info(client_id: str):
     client["updatedAt"] = now_iso()
     save_db(db)
     return jsonify({"success": True, "tenantId": tenant_id, "client": client, "pdaInfo": pda})
+
+
+def get_admin_client_or_error(client_id: str):
+    db = load_db()
+    tenant_id, tenant = get_tenant(db)
+    if not tenant:
+        return db, tenant_id, tenant, None, tenant_error(tenant_id)
+    role_error = require_role(tenant, ["Admin", "Manager"])
+    if role_error:
+        return db, tenant_id, tenant, None, role_error
+    client = find_client(tenant, client_id)
+    if not client:
+        return db, tenant_id, tenant, None, (jsonify({"success": False, "error": "Client not found in this tenant", "tenantId": tenant_id}), 404)
+    ensure_client_workflow(client)
+    return db, tenant_id, tenant, client, None
+
+
+@app.get("/api/clients/<client_id>/admin-workflow")
+def get_admin_workflow(client_id: str):
+    db, tenant_id, tenant, client, error = get_admin_client_or_error(client_id)
+    if error:
+        return error
+    save_db(db)
+    return jsonify({"success": True, "tenantId": tenant_id, "client": client, "adminWorkflow": client.get("adminWorkflow", {})})
+
+
+@app.get("/api/clients/<client_id>/admin-workflow/status")
+def get_admin_workflow_status(client_id: str):
+    # Read-only status is safe for any user in the same tenant. Updating the
+    # workflow remains restricted to Admin/Manager below. This prevents the
+    # consultant UI from hitting a missing/blocked status endpoint.
+    db = load_db()
+    tenant_id, tenant = get_tenant(db)
+    if not tenant:
+        return tenant_error(tenant_id)
+    client = find_client(tenant, client_id)
+    if not client:
+        return jsonify({"success": False, "error": "Client not found in this tenant", "tenantId": tenant_id}), 404
+    ensure_client_workflow(client)
+    save_db(db)
+    workflow = client.get("adminWorkflow", {})
+    return jsonify({
+        "success": True,
+        "tenantId": tenant_id,
+        "clientId": client_id,
+        "overallStatus": workflow.get("overallStatus", "Not Started"),
+        "activeService": workflow.get("activeService"),
+        "adminWorkflow": workflow,
+    })
+
+
+@app.patch("/api/clients/<client_id>/admin-workflow/status")
+def update_admin_workflow_status(client_id: str):
+    db, tenant_id, tenant, client, error = get_admin_client_or_error(client_id)
+    if error:
+        return error
+    payload = request_json()
+    workflow = client.setdefault("adminWorkflow", merge_admin_workflow(client, client.get("coach", {})))
+    if payload.get("overallStatus"):
+        workflow["overallStatus"] = payload.get("overallStatus")
+    if payload.get("activeService") in workflow.get("services", []):
+        workflow["activeService"] = payload.get("activeService")
+    workflow["lastUpdatedAt"] = now_iso()
+    client["updatedAt"] = now_iso()
+    save_db(db)
+    return jsonify({"success": True, "tenantId": tenant_id, "client": client, "adminWorkflow": workflow})
+
+
+@app.patch("/api/clients/<client_id>/admin-workflow/task")
+def update_admin_task(client_id: str):
+    db, tenant_id, tenant, client, error = get_admin_client_or_error(client_id)
+    if error:
+        return error
+    payload = request_json()
+    task_id = payload.get("taskId") or payload.get("id")
+    workflow = client.setdefault("adminWorkflow", merge_admin_workflow(client, client.get("coach", {})))
+    found = False
+    for task in workflow.get("tasks", []):
+        if task.get("id") == task_id:
+            found = True
+            for key in ["status", "notes", "ownerRole"]:
+                if key in payload:
+                    task[key] = payload[key]
+            task["updatedAt"] = now_iso()
+            if task.get("status") in ["Done", "Completed"]:
+                task["completedAt"] = task.get("completedAt") or now_iso()
+            elif "completedAt" in task:
+                task["completedAt"] = ""
+            break
+    if not found:
+        return jsonify({"success": False, "error": "Admin task not found", "taskId": task_id}), 404
+    workflow["lastUpdatedAt"] = now_iso()
+    client["updatedAt"] = now_iso()
+    save_db(db)
+    return jsonify({"success": True, "tenantId": tenant_id, "client": client, "adminWorkflow": workflow})
+
+
+@app.patch("/api/clients/<client_id>/admin-workflow/creditor")
+def update_admin_creditor_action(client_id: str):
+    db, tenant_id, tenant, client, error = get_admin_client_or_error(client_id)
+    if error:
+        return error
+    payload = request_json()
+    action_id = payload.get("actionId") or payload.get("id")
+    workflow = client.setdefault("adminWorkflow", merge_admin_workflow(client, client.get("coach", {})))
+    found = False
+    for action in workflow.get("creditorActions", []):
+        if action.get("id") == action_id:
+            found = True
+            for key in ["status", "response", "notes", "proposedAmount", "service"]:
+                if key in payload:
+                    action[key] = money_to_float(payload[key]) if key == "proposedAmount" else payload[key]
+            action["updatedAt"] = now_iso()
+            break
+    if not found:
+        return jsonify({"success": False, "error": "Creditor action not found", "actionId": action_id}), 404
+    workflow["lastUpdatedAt"] = now_iso()
+    client["updatedAt"] = now_iso()
+    save_db(db)
+    return jsonify({"success": True, "tenantId": tenant_id, "client": client, "adminWorkflow": workflow})
+
+
+@app.patch("/api/clients/<client_id>/admin-workflow/fees")
+def update_admin_fee_item(client_id: str):
+    db, tenant_id, tenant, client, error = get_admin_client_or_error(client_id)
+    if error:
+        return error
+    payload = request_json()
+    fee_id = payload.get("feeId") or payload.get("id")
+    workflow = client.setdefault("adminWorkflow", merge_admin_workflow(client, client.get("coach", {})))
+    found = False
+    for fee in workflow.get("feeItems", []):
+        if fee.get("id") == fee_id:
+            found = True
+            for key in ["status", "amount", "dueDate", "paidAt", "notes"]:
+                if key in payload:
+                    fee[key] = money_to_float(payload[key]) if key == "amount" else payload[key]
+            if fee.get("status") == "Paid" and not fee.get("paidAt"):
+                fee["paidAt"] = now_iso()
+            break
+    if not found:
+        return jsonify({"success": False, "error": "Fee item not found", "feeId": fee_id}), 404
+    workflow["lastUpdatedAt"] = now_iso()
+    client["updatedAt"] = now_iso()
+    save_db(db)
+    return jsonify({"success": True, "tenantId": tenant_id, "client": client, "adminWorkflow": workflow})
 
 
 @app.post("/api/clients/<client_id>/admin-submit")
@@ -2230,19 +3855,6 @@ def admin_clients():
         clients.append(client)
     clients.sort(key=lambda c: c.get("adminHandover", {}).get("submittedAt") or c.get("updatedAt", ""), reverse=True)
     return jsonify({"success": True, "tenantId": tenant_id, "count": len(clients), "clients": clients})
-
-
-@app.get("/<path:path>")
-def frontend_spa(path: str):
-    if path.startswith("api/"):
-        return jsonify({"success": False, "error": "Not found", "path": f"/{path}"}), 404
-    requested_file = FRONTEND_DIST / path
-    if requested_file.exists() and requested_file.is_file():
-        return send_from_directory(FRONTEND_DIST, path)
-    index_file = FRONTEND_DIST / "index.html"
-    if index_file.exists():
-        return send_from_directory(FRONTEND_DIST, "index.html")
-    return jsonify({"success": False, "error": "Frontend build not found"}), 404
 
 
 @app.get("/api/debug/routes")
