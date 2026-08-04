@@ -1,29 +1,218 @@
-import { useState, type ReactNode } from "react";
+import React, { useState } from "react";
 import { buildSalesOpportunity } from "../services/salesOpportunityEngine";
 
-export function SalesOpportunityPanel({ parsedReport }: { parsedReport: any }) {
-  const [copied, setCopied] = useState(false);
-  const opportunity = buildSalesOpportunity(parsedReport);
-  const priorityBadge = opportunity.priority === "High" ? "badge red" : opportunity.priority === "Low" ? "badge green" : "badge";
+type Props = {
+  parsedReport: any;
+};
 
-  const copyScript = async () => {
-    const text = ["SALES OPPORTUNITY", `Best Service: ${opportunity.recommendedService}`, `Sales Angle: ${opportunity.salesAngle}`, "Pain Points:", ...opportunity.painPoints.map(i => `- ${i}`), "Accounts to Mention:", ...opportunity.accountsToMention.map(i => `- ${i}`), "Questions:", ...opportunity.questionsToAsk.map((i,n) => `${n+1}. ${i}`), "Next Actions:", ...opportunity.nextBestActions.map((i,n) => `${n+1}. ${i}`), `Compliance: ${opportunity.complianceNote}`].join("
-");
-    try { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { alert("Could not copy script."); }
+export default function SalesOpportunityPanel({ parsedReport }: Props) {
+  const [copied, setCopied] = useState(false);
+
+  if (!parsedReport) return null;
+
+  const opportunity = buildSalesOpportunity(parsedReport);
+
+  const priorityClass =
+    opportunity.priority === "High"
+      ? "badge-error"
+      : opportunity.priority === "Medium"
+      ? "badge-warning"
+      : "badge-success";
+
+  const copySalesScript = async () => {
+    const textToCopy = `
+SALES OPPORTUNITY
+
+Best Service:
+${opportunity.recommendedService}
+
+Main Sales Angle:
+${opportunity.salesAngle}
+
+Opening:
+${opportunity.consultantOpening}
+
+Pitch:
+${opportunity.pitchScript}
+
+Pain Points:
+${opportunity.painPoints.map((item) => `- ${item}`).join("\n")}
+
+Accounts to Mention:
+${opportunity.accountsToMention.map((item) => `- ${item}`).join("\n")}
+
+Questions:
+${opportunity.questionsToAsk.map((item, index) => `${index + 1}. ${item}`).join("\n")}
+
+Next Best Actions:
+${opportunity.nextBestActions.map((item, index) => `${index + 1}. ${item}`).join("\n")}
+
+Compliance:
+${opportunity.complianceNote}
+    `.trim();
+
+    try {
+      await navigator.clipboard.writeText(textToCopy);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    } catch {
+      alert("Could not copy. Please copy manually.");
+    }
   };
 
-  return <div className="card sales-box">
-    <div style={{display:"flex", justifyContent:"space-between", gap:12, flexWrap:"wrap"}}>
-      <div><h2>Sales Opportunity Coach</h2><p className="muted">Rule-based sales advice generated from the parsed credit report.</p></div>
-      <div style={{display:"flex", gap:8, alignItems:"center", flexWrap:"wrap"}}><span className={priorityBadge}>{opportunity.priority} Priority</span><span className="badge green">{opportunity.confidence}% Match</span><button className="btn secondary" onClick={copyScript}>{copied ? "Copied" : "Copy Script"}</button></div>
+  return (
+    <div className="card bg-base-100 shadow-xl border border-base-300">
+      <div className="card-body space-y-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h2 className="card-title text-2xl">Sales Opportunity</h2>
+            <p className="text-sm opacity-70">
+              Consultant sales guidance generated from the parsed credit report.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <span className={`badge ${priorityClass} badge-lg`}>
+              {opportunity.priority} Priority
+            </span>
+
+            <span className="badge badge-primary badge-lg">
+              {opportunity.confidence}% Match
+            </span>
+
+            <button type="button" className="btn btn-sm btn-outline" onClick={copySalesScript}>
+              {copied ? "Copied" : "Copy Script"}
+            </button>
+          </div>
+        </div>
+
+        <div className="alert alert-info">
+          <div>
+            <h3 className="font-bold">Best Service to Sell</h3>
+            <p>{opportunity.recommendedService}</p>
+          </div>
+        </div>
+
+        <div className="grid gap-4 xl:grid-cols-2">
+          <Section title="Main Sales Angle">
+            <p>{opportunity.salesAngle}</p>
+          </Section>
+
+          <Section title="Consultant Opening">
+            <p>{opportunity.consultantOpening}</p>
+          </Section>
+        </div>
+
+        <Section title="Pitch Script">
+          <p>{opportunity.pitchScript}</p>
+        </Section>
+
+        <div className="grid gap-4 xl:grid-cols-2">
+          <ListSection
+            title="Pain Points Found"
+            items={opportunity.painPoints}
+            emptyText="No major pain points detected."
+          />
+
+          <ListSection
+            title="Accounts to Mention"
+            items={opportunity.accountsToMention}
+            emptyText="No account highlights available."
+          />
+        </div>
+
+        <div className="grid gap-4 xl:grid-cols-2">
+          <ListSection
+            title="Possible Prescribed Debt"
+            items={opportunity.prescribedDebtCandidates}
+            emptyText="None detected."
+          />
+
+          <ListSection
+            title="Furniture Accounts"
+            items={opportunity.furnitureAccounts}
+            emptyText="None detected."
+          />
+        </div>
+
+        <ListSection
+          title="Questions the Consultant Must Ask"
+          items={opportunity.questionsToAsk}
+          emptyText="No questions available."
+          ordered
+        />
+
+        <Section title="Objection Handling">
+          <div className="space-y-3">
+            {opportunity.objectionHandlers.map((item, index) => (
+              <div key={index} className="border-b border-base-300 pb-3 last:border-b-0">
+                <p className="font-semibold">Client says: “{item.objection}”</p>
+                <p className="opacity-80">Consultant replies: {item.response}</p>
+              </div>
+            ))}
+          </div>
+        </Section>
+
+        <ListSection
+          title="Next Best Actions"
+          items={opportunity.nextBestActions}
+          emptyText="No next actions available."
+        />
+
+        <div className="alert alert-warning">
+          <div>
+            <h3 className="font-bold">Compliance Note</h3>
+            <p>{opportunity.complianceNote}</p>
+          </div>
+        </div>
+      </div>
     </div>
-    <div className="sales-banner"><b>Best Service to Sell:</b> {opportunity.recommendedService}</div>
-    <div className="sales-grid"><Section title="Main Sales Angle"><p>{opportunity.salesAngle}</p></Section><List title="Pain Points Found" items={opportunity.painPoints} empty="No major pain points detected." /></div>
-    <div className="sales-grid"><List title="Accounts to Mention" items={opportunity.accountsToMention} empty="No account highlights available." /><List title="Questions the Consultant Must Ask" items={opportunity.questionsToAsk} empty="No questions available." ordered /></div>
-    <List title="Next Best Actions" items={opportunity.nextBestActions} empty="No next actions available." />
-    <div className="sales-warning"><b>Compliance Note</b><p>{opportunity.complianceNote}</p></div>
-  </div>;
+  );
 }
-export default SalesOpportunityPanel;
-function Section({ title, children }: { title: string; children: ReactNode }) { return <div className="sales-section"><h3>{title}</h3>{children}</div>; }
-function List({ title, items, empty, ordered = false }: { title: string; items: string[]; empty: string; ordered?: boolean }) { return <Section title={title}>{items.length === 0 ? <p className="muted">{empty}</p> : ordered ? <ol>{items.map((i,n) => <li key={n}>{i}</li>)}</ol> : <ul>{items.map((i,n) => <li key={n}>{i}</li>)}</ul>}</Section>; }
+
+function Section({
+  title,
+  children
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-xl bg-base-200 p-4">
+      <h3 className="font-bold mb-2">{title}</h3>
+      {children}
+    </div>
+  );
+}
+
+function ListSection({
+  title,
+  items,
+  emptyText,
+  ordered = false
+}: {
+  title: string;
+  items: string[];
+  emptyText: string;
+  ordered?: boolean;
+}) {
+  return (
+    <Section title={title}>
+      {items.length === 0 ? (
+        <p className="opacity-70">{emptyText}</p>
+      ) : ordered ? (
+        <ol className="list-decimal pl-5 space-y-1">
+          {items.map((item, index) => (
+            <li key={index}>{item}</li>
+          ))}
+        </ol>
+      ) : (
+        <ul className="list-disc pl-5 space-y-1">
+          {items.map((item, index) => (
+            <li key={index}>{item}</li>
+          ))}
+        </ul>
+      )}
+    </Section>
+  );
+}
