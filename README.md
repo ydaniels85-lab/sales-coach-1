@@ -1,72 +1,89 @@
-# Fin-Tastic Sales Coach - Separate DebiCheck + Vibe Dashboard
+# Fin-Tastic Sales Coach
 
-This build updates the consultant dashboard for more motivation/healthy competition and changes NuPay so the consultant can send separate DebiChecks where applicable.
+A lighter consultant-facing app for opening and closing debt-service sales.
 
-## What changed
+This app is intentionally separate from `fin-tastic-enterprise`.
 
-### Consultant dashboard
+## What it does
 
-- Dashboard remains performance-only with no client names, IDs, phone numbers or case details.
-- Added a higher-energy **Khusela Growth League** layout.
-- Added motivational chips, daily mission cards and a stronger top-three podium.
-- Leaderboard still ranks consultants by:
-  - leads generated / uploaded reports
-  - DC value
-  - reduced instalment value
-  - DRR fees
-  - documents received
-  - admin handovers
-  - performance score
+- Uploads and parses PDF credit reports
+- Detects debt review flags, balances, arrears, score, dates and likely sales opportunities
+- Gives the consultant a sales coach script for opening, objections and closing
+- Sends/creates placeholder signature link
+- Sends/creates placeholder document upload link
+- Sends/creates placeholder NuPay mandate request
+- Passes a closed sale to admin for workflow/PDA processing
 
-### NuPay DebiCheck
+## Important compliance note
 
-The Banking / NuPay tab now separates the two different collections:
+The app avoids saying debt mediation will guarantee or influence a judge. The built-in compliant wording is:
 
-1. **Removal DebiCheck**
-   - Used only when Debt Review Removal applies.
-   - Collects the R7,000 DRR removal service fee.
-   - Consultant can split it over 1, 2 or 3 months.
-   - Consultant can choose a separate debit order start date.
+> Debt mediation can support the debt review removal application by showing that the client has a realistic plan for remaining balances, improved affordability, and creditor engagement. The final decision remains with the court or relevant legal process.
 
-2. **Mediation DebiCheck**
-   - Used only when Debt Mediation / reduced payment applies.
-   - Collects the ongoing monthly reduced payment.
-   - No 1/2/3 month split is shown for mediation.
-   - Consultant can choose a separate debit order start date.
+## Run locally on Windows
 
-For DRR + Mediation double-sale clients, the consultant can send both DebiChecks separately.
-
-## New backend routes
-
-```text
-POST /api/clients/<client_id>/mandates/removal/send
-POST /api/clients/<client_id>/mandates/removal/cancel
-GET  /api/clients/<client_id>/mandates/removal/status
-
-POST /api/clients/<client_id>/mandates/mediation/send
-POST /api/clients/<client_id>/mandates/mediation/cancel
-GET  /api/clients/<client_id>/mandates/mediation/status
-```
-
-## New public portal routes
-
-```text
-GET/POST /portal/<tenant_id>/nupay-removal/<client_id>/<token>
-GET/POST /portal/<tenant_id>/nupay-mediation/<client_id>/<token>
-```
-
-## Run
+### Backend
 
 ```bat
-START_ALL.bat
+cd backend
+py -m venv venv
+venv\Scripts\activate
+pip install -r requirements.txt
+python app.py
 ```
 
-## Restart fully after replacing files
+Backend will run on:
+
+```text
+http://localhost:5000
+```
+
+### Frontend
+
+Open a second terminal:
 
 ```bat
-taskkill /F /IM python.exe
-taskkill /F /IM node.exe
-START_ALL.bat
+cd frontend
+npm install
+npm run dev
 ```
 
-Then hard refresh the browser with `Ctrl + F5`.
+Frontend will run on:
+
+```text
+http://localhost:5173
+```
+
+## Quick Windows start files
+
+You can also use:
+
+```bat
+run_backend.bat
+run_frontend.bat
+```
+
+## Backend endpoints
+
+```text
+GET  /api/health
+GET  /api/debug/routes
+POST /api/upload/credit-report
+GET  /api/leads
+GET  /api/leads/<lead_id>
+POST /api/leads
+POST /api/leads/<lead_id>/send-signature-link
+POST /api/leads/<lead_id>/send-document-link
+POST /api/leads/<lead_id>/send-nupay-mandate
+POST /api/leads/<lead_id>/close-sale
+POST /api/leads/<lead_id>/pass-to-admin
+GET  /api/admin/handoffs
+```
+
+## NuPay integration
+
+`backend/services/mandate_service.py` is a safe placeholder adapter. It does not call NuPay yet. Replace the mock method with your real NuPay/DebiCheck API once you have merchant credentials and documentation.
+
+## Signature and document links
+
+`backend/services/link_service.py` creates local demo portal links. Replace these with your real e-sign provider or client portal when ready.
